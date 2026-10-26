@@ -17,8 +17,6 @@ SnowLuma Go 是 [NapCat_Go](https://github.com/SATA-F5/NC-Go) 的姊妹插件：
   <sub>内嵌控制台预览（模拟数据）</sub>
 </p>
 
-> [!NOTE]
-> 当前仓库是**内部 beta 构建**：`metadata.yaml` 的插件版本沿用 `7.4.1`，方便与 NapCat_Go 同版本号对比测试；功能与文档会继续迭代，正式发版时再统一升版。
 
 ---
 
