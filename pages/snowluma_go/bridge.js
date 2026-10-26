@@ -2,7 +2,7 @@
  *
  * Talks to the plugin through AstrBot's plugin-page bridge
  * (window.AstrBotPluginPage.apiGet/apiPost) which proxies to the routes the
- * Python side registered under /snowluma_go/*.
+ * Python side registered under /<PLUGIN_NAME>/*.
  */
 (function () {
   'use strict';
@@ -265,8 +265,7 @@
       ? esc((data.accounts || []).map((a) => a.uin + (a.nickname ? ' (' + a.nickname + ')' : '')).join(', '))
       : '<span class="muted">尚无在线账号</span>');
     kv('AstrBot 平台', esc(data.plugin && data.plugin.astrbot_platform ? data.plugin.astrbot_platform : '-'));
-    kv('插件版本', esc(data.plugin && data.plugin.code_version ? data.plugin.code_version : '-') +
-      '<span class="tag">beta</span>');
+    kv('插件版本', esc(data.plugin && data.plugin.code_version ? data.plugin.code_version : '-'));
 
     $('status-kv').innerHTML = rows.join('');
   }

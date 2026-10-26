@@ -43,7 +43,7 @@ from .utils import (
     write_json,
 )  # noqa: F401  (read_json/write_json are kept for future migrations)
 
-PLUGIN_CODE_VERSION = "2026.10-snowluma-go-beta"
+PLUGIN_CODE_VERSION = "1.0.0"
 
 
 def _coerce(key: str, value: Any, default: Any) -> Any:

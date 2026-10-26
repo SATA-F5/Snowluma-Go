@@ -27,7 +27,7 @@ from astrbot.api import logger
 # Identity / defaults
 # --------------------------------------------------------------------------- #
 
-PLUGIN_NAME = "snowluma_go"
+PLUGIN_NAME = "pulids_snowluma_go_to_astrbot"
 CONFIG_VERSION = 1
 
 DEFAULT_SNOWLUMA_PORT = 5099
