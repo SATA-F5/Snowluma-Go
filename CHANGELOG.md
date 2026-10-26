@@ -3,9 +3,9 @@
 本项目的版本号与 [NapCat_Go](https://github.com/SATA-F5/NC-Go) 保持同步，方便同版本对比测试。
 当前为**内部 beta** 构建，`metadata.yaml` 版本固定为 `7.4.1`，未做正式发版递增。
 
-## 7.4.1（内部 beta）
+## 1.0.0
 
-首个 SnowLuma Go 构建，按 NapCat_Go 的功能面重写为「官方 API 集成」路线。
+首个 SnowLuma Go 插件
 
 ### 新增
 
