@@ -22,6 +22,7 @@
         busy: new Set(),
         statusTimer: null,
         offlineWarned: false,
+        revealedPassword: "",
         context: {},
     };
 
@@ -296,9 +297,30 @@
         setValue("s-install-dir", status.install_dir || "-");
         setValue("s-astrbot-path", syncer.astrbot_config_path || "未找到", syncer.astrbot_config_path ? "" : "warn");
 
+        renderPassword(status);
+        const webuiLink = $("btn-open-webui-newpage");
+        if (webuiLink) {
+            // A real <a target="_blank"> is used instead of window.open() so the
+            // browser cannot treat it as an async popup and block it.
+            webuiLink.href = status.running && status.webui_url ? status.webui_url : "#";
+        }
+
         // keep the sync button meaningful
         const syncBtn = $("btn-sync");
         syncBtn.disabled = !status.running || !syncer.astrbot_bot_found || S.busy.has("sync");
+    }
+
+    function renderPassword(status) {
+        const node = $("s-password");
+        if (!node) return;
+        if (S.revealedPassword) {
+            node.textContent = S.revealedPassword;
+            node.classList.add("revealed");
+            return;
+        }
+        node.classList.remove("revealed");
+        node.textContent = (status && status.webui_password_masked)
+            || (status && status.password_managed ? "已保存（点击显示）" : "未设置（首次启动自动生成）");
     }
 
     function renderAccounts(status) {
@@ -595,15 +617,95 @@
         refreshStatus();
     }
 
-    async function actionOpenWebUI(serverSide) {
-        const result = await run("open-webui", () => apiPost("open-webui"));
-        if (!result || !result.url) return;
-        if (serverSide) {
-            toast(result.opened ? "已调用 AstrBot 所在机器的浏览器" : "已请求打开浏览器（可能被拦截）", "ok", 3000);
+    function openWebUI() {
+        const status = S.status || {};
+        if (!status.running || !status.webui_url) {
+            toast(status.installed ? "请先启动 SnowLuma" : "请先安装并启动 SnowLuma", "warn", 3000);
             return;
         }
-        showUrl(result.url);
-        try { window.open(result.url, "_blank", "noopener,noreferrer"); } catch (error) { /* ignore */ }
+        // Called synchronously from the click handler, so popup blockers allow it.
+        let win = null;
+        try { win = window.open(status.webui_url, "_blank", "noopener,noreferrer"); } catch (error) { win = null; }
+        if (!win) showUrl(status.webui_url);
+    }
+
+    async function copyText(text, okMessage) {
+        if (!text) { toast("没有可复制的内容", "warn", 2500); return false; }
+        try {
+            await navigator.clipboard.writeText(text);
+            toast(okMessage || "已复制", "ok", 1600);
+            return true;
+        } catch (error) {
+            const area = document.createElement("textarea");
+            area.value = text;
+            area.style.position = "fixed";
+            area.style.opacity = "0";
+            document.body.appendChild(area);
+            area.select();
+            try {
+                document.execCommand("copy");
+                toast(okMessage || "已复制", "ok", 1600);
+                return true;
+            } catch (inner) {
+                toast("复制失败，请手动选择文本", "err", 3000);
+                return false;
+            } finally {
+                area.remove();
+            }
+        }
+    }
+
+    async function getPasswordPlain() {
+        if (S.revealedPassword) return S.revealedPassword;
+        const data = await apiGet("password/reveal");
+        const password = (data && data.password) || "";
+        if (password) {
+            S.revealedPassword = password;
+            renderPassword(S.status);
+        }
+        return password;
+    }
+
+    async function actionRevealPassword() {
+        if (S.revealedPassword) {
+            S.revealedPassword = "";
+            renderPassword(S.status);
+            return;
+        }
+        try {
+            const password = await getPasswordPlain();
+            if (!password) toast("当前还没有受管密码", "warn");
+        } catch (error) {
+            toast("读取密码失败：" + error.message, "err", 4000);
+        }
+    }
+
+    async function actionCopyPassword() {
+        try {
+            const password = await getPasswordPlain();
+            await copyText(password, "WebUI 密码已复制");
+        } catch (error) {
+            toast("读取密码失败：" + error.message, "err", 4000);
+        }
+    }
+
+    async function actionResetPassword() {
+        if (!(await confirmDialog("将生成新的随机 WebUI 密码并立即生效（当前会话会失效）。继续？", "重置密码"))) return;
+        const result = await run("reset-password", () => apiPost("password/reset"));
+        if (!result) return;
+        if (result.password) {
+            S.revealedPassword = result.password;
+            renderPassword(S.status);
+            await copyText(result.password, "新密码已复制");
+        }
+        toast(result.message || (result.ok ? "密码已重置" : "重置失败"), result.ok ? "ok" : "err", result.ok ? 4000 : 6000);
+        refreshStatus();
+    }
+
+    async function actionCopyWebUIUrl() {
+        const url = (S.status && S.status.webui_url) || "";
+        if (!url) { toast("WebUI 地址不可用", "warn", 2500); return; }
+        await copyText(url, "WebUI 地址已复制");
     }
 
     function showUrl(url) {
@@ -746,11 +848,12 @@
 
     async function revealPassword() {
         try {
-            const data = await apiGet("password/reveal");
+            const password = await getPasswordPlain();
             const input = $("cfg-webui_password");
-            if (data && data.password) {
-                input.value = data.password;
+            if (password) {
+                input.value = password;
                 input.type = "text";
+                renderPassword(S.status);
                 toast("已显示当前受管密码", "ok", 2000);
             } else {
                 toast("当前没有受管密码", "warn");
@@ -778,8 +881,18 @@
         $("btn-config-cancel").addEventListener("click", closeConfig);
         $("btn-config-save").addEventListener("click", saveConfig);
         $("btn-reveal-password").addEventListener("click", revealPassword);
+        $("btn-copy-password-modal").addEventListener("click", actionCopyPassword);
         $("btn-install").addEventListener("click", actionInstall);
         $("btn-uninstall").addEventListener("click", actionUninstall);
+        $("btn-copy-webui-url").addEventListener("click", actionCopyWebUIUrl);
+        $("btn-copy-webui-password").addEventListener("click", actionCopyPassword);
+        $("btn-open-webui-newpage").addEventListener("click", (event) => {
+            const status = S.status || {};
+            if (!(status.running && status.webui_url)) {
+                event.preventDefault();
+                toast(status.installed ? "请先启动 SnowLuma" : "请先安装并启动 SnowLuma", "warn", 3000);
+            }
+        });
         $("btn-clear-log").addEventListener("click", () => {
             S.logs = [];
             S.logOffset = S.status ? (S.status.log_count || 0) : 0;
@@ -795,9 +908,6 @@
             renderLogs();
             refreshLogs();
         });
-
-        $("btn-open-webui-newpage").addEventListener("click", () => actionOpenWebUI(false));
-        $("btn-open-webui-browser").addEventListener("click", () => actionOpenWebUI(true));
 
         $("btn-close-url").addEventListener("click", () => $("url-modal").classList.remove("visible"));
         $("btn-copy-url").addEventListener("click", async () => {
@@ -819,7 +929,10 @@
             if (action === "sync") { actionSync(); return; }
             if (action === "hook-load") { actionHook(Number(target.dataset.pid || 0), "load"); return; }
             if (action === "hook-unload") { actionHook(Number(target.dataset.pid || 0), "unload"); return; }
-            if (action === "open-webui") { actionOpenWebUI(false); return; }
+            if (action === "open-webui") { openWebUI(); return; }
+            if (action === "reveal-password") { actionRevealPassword(); return; }
+            if (action === "copy-password") { actionCopyPassword(); return; }
+            if (action === "reset-password") { actionResetPassword(); return; }
             if (action === "accept-agreements") { actionAcceptAgreements(); }
         });
 

@@ -29,8 +29,9 @@
                     <details class="webui-details" id="webui-details">
                         <summary class="big-btn" id="btn-open-webui-summary">打开 WebUI</summary>
                         <div class="webui-menu">
-                            <button class="webui-menu-item" id="btn-open-webui-newpage">在新页面打开（推荐）</button>
-                            <button class="webui-menu-item" id="btn-open-webui-browser">在 AstrBot 所在机器的浏览器打开</button>
+                            <a class="webui-menu-item" id="btn-open-webui-newpage" href="#" target="_blank" rel="noopener noreferrer">在新页面打开（推荐）</a>
+                            <button class="webui-menu-item" id="btn-copy-webui-url">复制 WebUI 地址</button>
+                            <button class="webui-menu-item" id="btn-copy-webui-password">复制 WebUI 密码</button>
                         </div>
                     </details>
                 </div>
@@ -99,6 +100,15 @@
                     <div class="status-item">
                         <div class="label">插件版本</div>
                         <div class="value" id="s-plugin">-</div>
+                    </div>
+                    <div class="status-item full pwd-item">
+                        <div class="label">WebUI 密码</div>
+                        <div class="value pwd-value">
+                            <span id="s-password" class="pwd-text">-</span>
+                            <button class="btn btn-sm" type="button" data-action="reveal-password">显示</button>
+                            <button class="btn btn-sm" type="button" data-action="copy-password">复制</button>
+                            <button class="btn btn-sm" type="button" data-action="reset-password">重置</button>
+                        </div>
                     </div>
                     <div class="status-item full">
                         <div class="label">安装目录</div>
@@ -237,6 +247,11 @@
                     <div style="display:flex;gap:8px;">
                         <input type="password" id="cfg-webui_password" placeholder="留空则沿用已保存的密码" style="flex:1;">
                         <button class="btn btn-sm" id="btn-reveal-password" type="button">显示</button>
+                        <button class="btn btn-sm" id="btn-copy-password-modal" type="button">复制</button>
+                    </div>
+                    <div class="form-hint">
+                        留空表示不修改。接管已有 SnowLuma 时，填写它当前的 WebUI 密码；
+                        可在 SnowLuma 启动日志中搜索 <code>initial credentials</code> 找到初始密码。
                     </div>
                 </div>
             </div>

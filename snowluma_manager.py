@@ -412,6 +412,34 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         except SnowLumaError as e:
             return {"ok": False, "message": e.message}
 
+    async def reset_password(self) -> Dict[str, Any]:
+        """Rotate the managed WebUI password and return the new plaintext once."""
+        api = await self.ensure_api(quiet=True)
+        if api is None:
+            return {"ok": False, "message": self.last_error or "SnowLuma 未就绪，无法重置密码"}
+        new_password = generate_strong_password()
+        try:
+            await api.change_password(self.password, new_password)
+        except SnowLumaConsentRequired:
+            return {"ok": False, "message": "请先在控制台同意 SnowLuma 用户协议，再重置密码"}
+        except SnowLumaError as e:
+            return {"ok": False, "message": f"重置失败: {e.message}"}
+
+        self._set_password(new_password)
+        try:
+            await api.login(new_password)
+            self.auth_ok = True
+            self.last_error = ""
+        except SnowLumaError as e:
+            self.auth_ok = False
+            return {
+                "ok": False,
+                "message": f"密码已重置但自动重新登录失败：{e.message}",
+                "password": new_password,
+            }
+        self._log("[auth] [ok] 已重置 SnowLuma WebUI 密码（新密码已加密保存）")
+        return {"ok": True, "message": "WebUI 密码已重置", "password": new_password}
+
     async def ensure_api(self, *, quiet: bool = False, retries: int = 1) -> Optional[SnowLumaAPI]:
         """Return a logged-in API client or ``None`` (never raises)."""
         if self.deploy_mode != "external" and not self.is_running_check():

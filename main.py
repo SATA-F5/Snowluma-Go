@@ -12,6 +12,7 @@ The plugin is a small operator console around SnowLuma:
 from __future__ import annotations
 
 import asyncio
+import os
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -43,7 +44,7 @@ from .utils import (
     write_json,
 )  # noqa: F401  (read_json/write_json are kept for future migrations)
 
-PLUGIN_CODE_VERSION = "1.0.1"
+PLUGIN_CODE_VERSION = "1.0.2"
 
 
 def _coerce(key: str, value: Any, default: Any) -> Any:
@@ -112,6 +113,7 @@ class SnowLumaGoPlugin(Star):
             ("open-webui", self.api_open_webui, ["POST"], "打开 SnowLuma WebUI"),
             ("accept-agreements", self.api_accept_agreements, ["POST"], "记录协议同意"),
             ("password/reveal", self.api_reveal_password, ["GET"], "读取受管 WebUI 密码"),
+            ("password/reset", self.api_reset_password, ["POST"], "重置 WebUI 密码"),
             ("qq/launch", self.api_qq_launch, ["POST"], "启动 QQ"),
             ("qq/stop", self.api_qq_stop, ["POST"], "关闭本插件启动的 QQ"),
             ("hook/all", self.api_hook_all, ["POST"], "挂载全部 QQ 进程"),
@@ -387,14 +389,25 @@ class SnowLumaGoPlugin(Star):
     async def api_open_webui(self):
         url = self.manager.webui_url
         opened = False
-        try:
-            opened = bool(webbrowser.open(url))
-        except Exception:
-            opened = False
-        return json_response({"ok": True, "url": url, "opened": opened})
+        # Headless Linux servers have no browser to launch; the page opens the
+        # URL in the operator's own browser instead.
+        headless = IS_LINUX and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+        if not headless:
+            try:
+                opened = bool(webbrowser.open(url))
+            except Exception:
+                opened = False
+        return json_response({"ok": True, "url": url, "opened": opened, "headless": headless})
 
     async def api_reveal_password(self):
         return json_response({"ok": True, "password": self.manager.password})
+
+    async def api_reset_password(self):
+        try:
+            result = await self.manager.reset_password()
+            return json_response(result)
+        except Exception as exc:
+            return error_response(f"重置密码失败: {shorten(str(exc), 200)}")
 
     async def api_update_check(self):
         try:

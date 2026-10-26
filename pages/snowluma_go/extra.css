@@ -125,6 +125,34 @@ a { color: var(--primary-light); }
     gap: 8px;
     align-items: end;
 }
+a.webui-menu-item {
+    display: block;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+
+.pwd-item .pwd-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-weight: 400;
+}
+.pwd-text {
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    color: var(--text);
+    word-break: break-all;
+    white-space: normal;
+    line-height: 1.4;
+}
+.pwd-text.revealed { color: var(--warning); }
+.pwd-value .btn {
+    padding: 3px 10px;
+    font-size: 10px;
+    border-radius: 7px;
+}
+
 #s-webui {
     font-family: 'Consolas', monospace;
     font-size: 10px;

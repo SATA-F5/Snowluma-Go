@@ -1,5 +1,13 @@
 # 更新日志
 
+## 1.0.2
+
+- 控制台直接显示 WebUI 密码：支持显示 / 复制 / 一键重置（重置后新密码自动复制），不必再去翻日志或配置文件
+- 接管已有 SnowLuma 时，配置弹窗会提示去启动日志里搜索 `initial credentials` 获取密码
+- 「在新页面打开 WebUI」改为原生链接，避免异步 `window.open` 被浏览器拦截而只弹复制窗
+- 新增「复制 WebUI 地址」「复制 WebUI 密码」，移除服务器端拉起浏览器的选项，适配没有图形界面的 Ubuntu 服务器
+- 服务端 `open-webui` 在无 `DISPLAY` 的 Linux 上不再尝试启动浏览器
+
 ## 1.0.1
 
 - 修复首次打开控制台提示「检测不到 AstrBot 插件桥接」：AstrBot 部分版本把 bridge-sdk 注入到 `</body>` 前，且该资源需要仪表盘认证，iframe 内可能加载失败；插件现在会先等待 SDK，缺失时启用内置的同协议 `postMessage` 桥接
