@@ -1,0 +1,15 @@
+{
+  "metadata": {
+    "display_name": "Snowluma Go"
+  },
+  "pages": {
+    "snowluma_go": {
+      "title": "SnowLuma Console"
+    }
+  },
+  "views": {
+    "snowluma_go": {
+      "title": "SnowLuma Console"
+    }
+  }
+}

@@ -1,0 +1,111 @@
+{
+    "auto_start": {
+        "type": "bool",
+        "description": "插件加载后自动启动 SnowLuma",
+        "default": true,
+        "hint": "AstrBot 启动并加载本插件时自动拉起 SnowLuma（external 模式只做连接探测，不启动进程）。"
+    },
+    "auto_sync": {
+        "type": "bool",
+        "description": "检测到 QQ 账号在线后自动同步 OneBot 连接",
+        "default": true,
+        "hint": "账号出现在 SnowLuma 且已在线时，自动通过官方 API 写入 / 更新指向 AstrBot 的反向 WS 连接。"
+    },
+    "auto_hook": {
+        "type": "bool",
+        "description": "自动注入新发现的 QQ 进程",
+        "default": true,
+        "hint": "启动 SnowLuma 时设置 SNOWLUMA_HOOK_AUTOLOAD=1，使新出现的 QQ 进程被自动挂载（等价于在 WebUI 里逐个点「加载」）。"
+    },
+    "auto_start_qq": {
+        "type": "bool",
+        "description": "启动 SnowLuma 后自动拉起 QQ",
+        "default": false,
+        "hint": "仅在本机模式生效。QQ 登录仍需在弹出的窗口里扫码 / 快速登录，插件不会代替你登录。"
+    },
+    "deploy_mode": {
+        "type": "string",
+        "description": "运行方式：auto / native / external",
+        "default": "auto",
+        "hint": "auto=优先接管本机 SnowLuma 安装目录，没有则使用 external 里配置的地址；native=只管理本机下载安装的 SnowLuma；external=连接一个已经在运行的 SnowLuma（不下载、不启动进程）。"
+    },
+    "snowluma_port": {
+        "type": "int",
+        "description": "SnowLuma WebUI 端口",
+        "default": 5099,
+        "hint": "本机模式使用。插件启动 SnowLuma 时会通过 SNOWLUMA_WEBUI_PORT 注入该端口；若端口被占用 SnowLuma 会自动顺延，插件会从日志里读回真实端口。"
+    },
+    "snowluma_version": {
+        "type": "string",
+        "description": "默认安装版本",
+        "default": "latest",
+        "hint": "latest 或具体 tag（如 v2.2.0）。安装时可在插件页面选择其他版本。"
+    },
+    "release_flavor": {
+        "type": "string",
+        "description": "发行包类型：full / lite",
+        "default": "full",
+        "hint": "full 自带 Node 运行时，开箱即用；lite 体积小，但要求系统 Node.js 满足 ^24.22.1 || >=26.12.1。"
+    },
+    "download_mirror": {
+        "type": "string",
+        "description": "GitHub 下载加速前缀（可选）",
+        "default": "https://gh-proxy.com/",
+        "hint": "例如 https://gh-proxy.com/。留空则直接走官方地址；失败时仍会自动尝试内置镜像列表。"
+    },
+    "webui_password": {
+        "type": "string",
+        "description": "SnowLuma WebUI 密码（可选）",
+        "default": "",
+        "secret": true,
+        "hint": "留空时插件会自动生成强密码并以加密形式保存到插件数据目录。接管一个已有 SnowLuma 安装时，请填写它当前的 WebUI 密码。"
+    },
+    "external_host": {
+        "type": "string",
+        "description": "external 模式：SnowLuma WebUI 主机",
+        "default": "127.0.0.1",
+        "hint": "连接远程 SnowLuma 时填它的地址，例如 192.168.1.10。注意远程模式下反向 WS 地址需要 AstrBot 可被对端访问。"
+    },
+    "external_port": {
+        "type": "int",
+        "description": "external 模式：SnowLuma WebUI 端口",
+        "default": 5099,
+        "hint": "已在运行的 SnowLuma 的 WebUI 端口。"
+    },
+    "qq_path": {
+        "type": "string",
+        "description": "QQ 可执行文件路径（可选）",
+        "default": "",
+        "hint": "留空自动从注册表 / 常见路径探测。Windows 例：C:\\Program Files\\Tencent\\QQNT\\QQ.exe；Linux 例：/opt/QQ/qq。"
+    },
+    "qq_number": {
+        "type": "string",
+        "description": "机器人 QQ 号（可选）",
+        "default": "",
+        "hint": "用于在 SnowLuma 尚未回报账号时指定要配置的 UIN。留空则自动使用 SnowLuma 内已登录的账号。"
+    },
+    "astrbot_config_path": {
+        "type": "string",
+        "description": "AstrBot 配置文件路径（可选）",
+        "default": "",
+        "hint": "通常是 AstrBot 数据目录下的 cmd_config.json。留空自动探测。"
+    },
+    "ws_host_override": {
+        "type": "string",
+        "description": "反向 WS 主机覆盖（可选）",
+        "default": "",
+        "hint": "SnowLuma 与 AstrBot 不在同一台机器时，填写 SnowLuma 侧可访问到的 AstrBot 主机 / IP。留空时从 AstrBot 的 aiocqhttp 配置推断（0.0.0.0、:: 等监听地址会折叠为 127.0.0.1）。"
+    },
+    "auto_accept_agreements": {
+        "type": "bool",
+        "description": "启动时自动向 SnowLuma 声明已同意 EULA / 隐私政策",
+        "default": false,
+        "hint": "开启后以 SNOWLUMA_ACCEPT_EULA=1、SNOWLUMA_ACCEPT_PRIVACY=1 启动进程。请在确认已阅读 SnowLuma 的用户协议与隐私政策后再开启；不开启时可在插件页面点击同意。"
+    },
+    "sync_connection_name": {
+        "type": "string",
+        "description": "写入 SnowLuma 的 OneBot 连接名",
+        "default": "astrbot",
+        "hint": "插件创建的 wsClients 条目名称，便于在 SnowLuma WebUI 里辨认。"
+    }
+}

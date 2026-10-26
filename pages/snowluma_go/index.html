@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark light" />
+<title>SnowLuma Go 控制台</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --bg-soft: #121a30;
+    --panel: rgba(21, 29, 50, 0.82);
+    --panel-2: rgba(28, 38, 64, 0.72);
+    --line: rgba(148, 178, 255, 0.16);
+    --line-strong: rgba(148, 178, 255, 0.3);
+    --text: #e8eefc;
+    --muted: #93a1c0;
+    --accent: #5b8cff;
+    --accent-2: #8b5cf6;
+    --accent-soft: rgba(91, 140, 255, 0.16);
+    --ok: #34d399;
+    --ok-soft: rgba(52, 211, 153, 0.14);
+    --warn: #fbbf24;
+    --warn-soft: rgba(251, 191, 36, 0.14);
+    --danger: #fb7185;
+    --danger-soft: rgba(251, 113, 133, 0.14);
+    --shadow: 0 18px 50px rgba(2, 6, 23, 0.5);
+    --radius: 16px;
+  }
+  html[data-theme="light"] {
+    --bg: #eef3ff;
+    --bg-soft: #e3eaf9;
+    --panel: rgba(255, 255, 255, 0.9);
+    --panel-2: rgba(244, 247, 255, 0.95);
+    --line: rgba(30, 64, 175, 0.12);
+    --line-strong: rgba(30, 64, 175, 0.24);
+    --text: #17203a;
+    --muted: #5b6b8c;
+    --accent: #2f6bff;
+    --accent-2: #7c3aed;
+    --accent-soft: rgba(47, 107, 255, 0.1);
+    --ok: #059669;
+    --ok-soft: rgba(5, 150, 105, 0.1);
+    --warn: #b45309;
+    --warn-soft: rgba(180, 83, 9, 0.1);
+    --danger: #dc2626;
+    --danger-soft: rgba(220, 38, 38, 0.08);
+    --shadow: 0 16px 40px rgba(30, 58, 138, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(1000px 500px at 8% -10%, rgba(91, 140, 255, 0.18), transparent 60%),
+      radial-gradient(900px 480px at 100% 0%, rgba(139, 92, 246, 0.16), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 18px;
+  }
+  .app { max-width: 1420px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; flex-wrap: wrap;
+    padding: 16px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: linear-gradient(120deg, var(--panel), var(--panel-2));
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(14px);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 220px; }
+  .brand .mark {
+    width: 44px; height: 44px; border-radius: 13px;
+    display: grid; place-items: center;
+    font-size: 22px; font-weight: 700; color: #fff;
+    background: linear-gradient(140deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 22px rgba(91, 140, 255, 0.35);
+  }
+  .brand h1 { margin: 0; font-size: 19px; letter-spacing: 0.4px; }
+  .brand .sub { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+
+  .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+    background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.ok { color: var(--ok); border-color: rgba(52, 211, 153, 0.35); background: var(--ok-soft); }
+  .pill.ok .dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.14); }
+  .pill.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); background: var(--warn-soft); }
+  .pill.warn .dot { background: var(--warn); }
+  .pill.err { color: var(--danger); border-color: rgba(251, 113, 133, 0.35); background: var(--danger-soft); }
+  .pill.err .dot { background: var(--danger); }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 14px; border-radius: 10px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 13px; font-weight: 500; font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, opacity 0.16s;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--accent); background: var(--accent-soft); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn.primary {
+    border: none; color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 22px rgba(91, 140, 255, 0.3);
+  }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+  .btn.ghost { background: transparent; }
+  .btn.danger { border-color: rgba(251, 113, 133, 0.4); color: var(--danger); background: var(--danger-soft); }
+  .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+  .btn.icon { padding: 7px 10px; }
+
+  /* ---------- banners ---------- */
+  .banners { display: flex; flex-direction: column; gap: 8px; }
+  .banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px 14px; border-radius: 12px; font-size: 13px;
+    border: 1px solid var(--line-strong);
+    background: var(--panel);
+  }
+  .banner.warn { border-color: rgba(251, 191, 36, 0.4); background: var(--warn-soft); color: var(--warn); }
+  .banner.err { border-color: rgba(251, 113, 133, 0.4); background: var(--danger-soft); color: var(--danger); }
+  .banner.ok { border-color: rgba(52, 211, 153, 0.35); background: var(--ok-soft); color: var(--ok); }
+  .banner .grow { flex: 1; }
+
+  /* ---------- layout ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .grid .span2 { grid-column: 1 / -1; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: linear-gradient(150deg, var(--panel), var(--panel-2));
+    box-shadow: var(--shadow);
+    padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 12px;
+    min-width: 0;
+  }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .card-head h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.3px; }
+  .card-head .hint { color: var(--muted); font-size: 12px; }
+  .card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ---------- key/value ---------- */
+  .kv { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 7px 12px; font-size: 13px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .mono { font-family: "Cascadia Mono", Consolas, "SFMono-Regular", monospace; font-size: 12px; }
+  .muted { color: var(--muted); }
+  .ok-text { color: var(--ok); }
+  .warn-text { color: var(--warn); }
+  .err-text { color: var(--danger); }
+
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; border: 1px solid var(--line-strong); color: var(--muted);
+    margin-left: 6px; vertical-align: middle;
+  }
+  .tag.ok { color: var(--ok); border-color: rgba(52, 211, 153, 0.35); background: var(--ok-soft); }
+  .tag.warn { color: var(--warn); border-color: rgba(251, 191, 36, 0.35); background: var(--warn-soft); }
+  .tag.err { color: var(--danger); border-color: rgba(251, 113, 133, 0.35); background: var(--danger-soft); }
+
+  /* ---------- lists / tables ---------- */
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 11px; border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    font-size: 13px;
+    min-width: 0;
+  }
+  .row .who { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .row .who strong { font-weight: 600; }
+  .row .who span { color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+  .row .actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .empty {
+    padding: 14px; text-align: center; color: var(--muted); font-size: 12.5px;
+    border: 1px dashed var(--line); border-radius: 10px;
+  }
+
+  /* ---------- install ---------- */
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 5px; min-width: 120px; flex: 1; }
+  .field label { font-size: 11.5px; color: var(--muted); }
+  input[type="text"], input[type="password"], input[type="number"], select {
+    width: 100%;
+    padding: 8px 10px; border-radius: 9px;
+    border: 1px solid var(--line-strong);
+    background: var(--bg-soft);
+    color: var(--text);
+    font-family: inherit; font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  select { cursor: pointer; }
+
+  .progress { display: flex; flex-direction: column; gap: 6px; }
+  .bar { height: 8px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; border: 1px solid var(--line); }
+  .bar > i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.3s ease;
+  }
+  .progress .meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
+
+  /* ---------- logs ---------- */
+  .logs-card .log-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .log-view {
+    margin: 0;
+    height: 320px;
+    overflow: auto;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(5, 10, 22, 0.72);
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 12px; line-height: 1.65;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    color: #cfd8ee;
+  }
+  html[data-theme="light"] .log-view { background: #0e1526; color: #dbe4f8; }
+  .log-line.err { color: #fda4af; }
+  .log-line.warn { color: #fcd34d; }
+  .log-line.ok { color: #6ee7b7; }
+  .log-line .ts { color: #64748b; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--accent); }
+
+  /* ---------- modal ---------- */
+  .mask {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(3, 7, 18, 0.66);
+    backdrop-filter: blur(3px);
+    display: none; align-items: flex-start; justify-content: center;
+    padding: 40px 16px; overflow: auto;
+  }
+  .mask.show { display: flex; }
+  .modal {
+    width: 640px; max-width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--line-strong);
+    border-radius: 18px;
+    box-shadow: 0 30px 80px rgba(2, 6, 23, 0.6);
+    padding: 20px 22px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  html[data-theme="light"] .modal { background: #fff; }
+  .modal h3 { margin: 0; font-size: 16px; }
+  .modal .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .modal .grid2 { grid-template-columns: 1fr; } }
+  .modal .section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .switch-row .label { font-size: 13px; }
+  .switch-row .desc { font-size: 11.5px; color: var(--muted); margin-top: 2px; max-width: 420px; }
+
+  /* ---------- toast ---------- */
+  .toasts { position: fixed; right: 18px; bottom: 18px; z-index: 90; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    padding: 10px 14px; border-radius: 10px; font-size: 13px;
+    background: var(--panel); border: 1px solid var(--line-strong);
+    box-shadow: var(--shadow);
+    animation: slide-in 0.2s ease;
+    max-width: 420px;
+  }
+  .toast.ok { border-color: rgba(52, 211, 153, 0.4); color: var(--ok); }
+  .toast.err { border-color: rgba(251, 113, 133, 0.4); color: var(--danger); }
+  .toast.warn { border-color: rgba(251, 191, 36, 0.4); color: var(--warn); }
+  @keyframes slide-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  .skeleton { color: var(--muted); font-size: 12.5px; }
+  a { color: var(--accent); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  details[open] summary { margin-bottom: 8px; }
+  .code {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    background: var(--bg-soft); border: 1px solid var(--line);
+    padding: 2px 6px; border-radius: 6px; font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark">❄</div>
+      <div>
+        <h1>SnowLuma Go</h1>
+        <p class="sub" id="subtitle">Loader…</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span class="pill" id="run-pill"><i class="dot"></i><span>读取中</span></span>
+      <button class="btn primary" data-act="start">启动</button>
+      <button class="btn" data-act="stop">停止</button>
+      <button class="btn" data-act="restart">重启</button>
+      <button class="btn ghost" data-act="open-webui">打开 WebUI</button>
+      <button class="btn ghost icon" data-act="settings" title="设置">⚙ 设置</button>
+    </div>
+  </header>
+
+  <div class="banners" id="banners"></div>
+
+  <main class="grid">
+    <section class="card span2">
+      <div class="card-head">
+        <h2>运行状态</h2>
+        <div class="card-actions">
+          <button class="btn sm ghost" data-act="refresh">刷新</button>
+          <button class="btn sm ghost" data-act="cleanup">清理残留</button>
+          <button class="btn sm ghost" data-act="update-check">检查更新</button>
+        </div>
+      </div>
+      <dl class="kv" id="status-kv">
+        <dt>状态</dt><dd class="skeleton">读取中…</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>QQ 与账号</h2>
+        <span class="hint" id="qq-hint"></span>
+      </div>
+      <div class="list" id="account-list"><div class="empty">正在读取账号…</div></div>
+      <div class="card-head" style="margin-top:2px">
+        <h2 style="font-size:12.5px;color:var(--muted)">QQ 进程</h2>
+        <div class="card-actions">
+          <button class="btn sm" data-act="qq-launch">启动 QQ</button>
+          <button class="btn sm ghost" data-act="qq-stop">关闭本插件 QQ</button>
+          <button class="btn sm primary" data-act="hook-all">全部挂载</button>
+        </div>
+      </div>
+      <div class="list" id="qq-process-list"><div class="empty">暂无 QQ 进程信息</div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>AstrBot 接入</h2>
+        <div class="card-actions">
+          <button class="btn sm primary" data-act="sync">立即同步</button>
+          <button class="btn sm ghost" data-act="disconnect">断开接入</button>
+        </div>
+      </div>
+      <dl class="kv" id="sync-kv"><dt>状态</dt><dd class="skeleton">读取中…</dd></dl>
+      <details id="scan-details">
+        <summary>配置诊断</summary>
+        <div class="list" id="scan-list"><div class="empty">暂无</div></div>
+      </details>
+    </section>
+
+    <section class="card span2">
+      <div class="card-head">
+        <h2>安装与更新</h2>
+        <span class="hint" id="install-hint"></span>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>版本</label>
+          <select id="release-select"><option value="latest">latest（最新版）</option></select>
+        </div>
+        <div class="field" style="max-width:180px">
+          <label>发行包</label>
+          <select id="flavor-select">
+            <option value="full">full（自带 Node）</option>
+            <option value="lite">lite（需系统 Node）</option>
+          </select>
+        </div>
+        <div class="field" style="max-width:160px">
+          <label>&nbsp;</label>
+          <button class="btn primary" data-act="install" id="btn-install">安装 / 更新</button>
+        </div>
+        <div class="field" style="max-width:150px">
+          <label>&nbsp;</label>
+          <button class="btn danger" data-act="uninstall" id="btn-uninstall">卸载</button>
+        </div>
+        <div class="field" style="max-width:130px">
+          <label>&nbsp;</label>
+          <button class="btn ghost" data-act="reload-releases">刷新列表</button>
+        </div>
+      </div>
+      <div class="progress" id="download-progress" style="display:none">
+        <div class="bar"><i id="download-bar"></i></div>
+        <div class="meta">
+          <span id="download-phase">准备中…</span>
+          <span id="download-detail"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card span2 logs-card">
+      <div class="card-head">
+        <h2>日志</h2>
+        <div class="log-toolbar">
+          <label class="toggle"><input type="checkbox" id="log-autoscroll" checked /> 自动滚动</label>
+          <label class="toggle"><input type="checkbox" id="log-pause" /> 暂停</label>
+          <button class="btn sm ghost" data-act="clear-logs">清空显示</button>
+          <select id="log-source" style="width:auto;padding:5px 8px;font-size:12px">
+            <option value="process">插件 / 进程</option>
+            <option value="server">SnowLuma 服务端</option>
+          </select>
+        </div>
+      </div>
+      <pre class="log-view" id="log-view"></pre>
+      <div class="meta muted" style="font-size:11.5px" id="log-meta">—</div>
+    </section>
+  </main>
+</div>
+
+<!-- Settings modal -->
+<div class="mask" id="settings-mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="插件设置">
+    <h3>插件设置</h3>
+    <div class="section-title">启动与自动流程</div>
+    <div class="grid2">
+      <label class="toggle"><input type="checkbox" id="cfg-auto_start" /> 插件加载后自动启动</label>
+      <label class="toggle"><input type="checkbox" id="cfg-auto_sync" /> 账号在线后自动同步 OneBot</label>
+      <label class="toggle"><input type="checkbox" id="cfg-auto_hook" /> 自动挂载新 QQ 进程</label>
+      <label class="toggle"><input type="checkbox" id="cfg-auto_start_qq" /> 自动拉起 QQ</label>
+    </div>
+    <div class="section-title">部署</div>
+    <div class="grid2">
+      <div class="field">
+        <label>运行方式</label>
+        <select id="cfg-deploy_mode">
+          <option value="auto">auto（自动）</option>
+          <option value="native">native（本机托管）</option>
+          <option value="external">external（连接已有实例）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>WebUI 端口</label>
+        <input type="number" id="cfg-snowluma_port" min="1" max="65535" />
+      </div>
+      <div class="field">
+        <label>external 主机</label>
+        <input type="text" id="cfg-external_host" placeholder="127.0.0.1" />
+      </div>
+      <div class="field">
+        <label>external 端口</label>
+        <input type="number" id="cfg-external_port" min="1" max="65535" />
+      </div>
+      <div class="field">
+        <label>默认安装版本</label>
+        <input type="text" id="cfg-snowluma_version" placeholder="latest" />
+      </div>
+      <div class="field">
+        <label>下载镜像前缀</label>
+        <input type="text" id="cfg-download_mirror" placeholder="https://gh-proxy.com/" />
+      </div>
+    </div>
+    <div class="section-title">账号与会话</div>
+    <div class="grid2">
+      <div class="field" style="grid-column:1/-1">
+        <label>SnowLuma WebUI 密码</label>
+        <div style="display:flex;gap:8px">
+          <input type="password" id="cfg-webui_password" placeholder="留空则沿用已保存的密码" />
+          <button class="btn sm ghost" type="button" id="btn-reveal-password">显示</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>机器人 QQ 号（可选）</label>
+        <input type="text" id="cfg-qq_number" placeholder="留空自动识别" />
+      </div>
+      <div class="field">
+        <label>QQ 可执行文件路径（可选）</label>
+        <input type="text" id="cfg-qq_path" placeholder="自动探测" />
+      </div>
+      <div class="field">
+        <label>AstrBot 配置路径（可选）</label>
+        <input type="text" id="cfg-astrbot_config_path" placeholder="自动探测 cmd_config.json" />
+      </div>
+      <div class="field">
+        <label>反向 WS 主机覆盖（可选）</label>
+        <input type="text" id="cfg-ws_host_override" placeholder="跨机部署时填写 AstrBot 地址" />
+      </div>
+      <div class="field">
+        <label>连接名</label>
+        <input type="text" id="cfg-sync_connection_name" placeholder="astrbot" />
+      </div>
+    </div>
+    <div class="section-title">安全</div>
+    <label class="switch-row" style="border:none">
+      <span>
+        <span class="label">自动同意 SnowLuma 用户协议 / 隐私政策</span>
+        <span class="desc">开启后启动时注入 SNOWLUMA_ACCEPT_EULA / SNOWLUMA_ACCEPT_PRIVACY。请确认你已阅读并接受这些协议。</span>
+      </span>
+      <input type="checkbox" id="cfg-auto_accept_agreements" />
+    </label>
+    <div class="modal-footer">
+      <button class="btn ghost" data-act="close-settings">取消</button>
+      <button class="btn primary" data-act="save-settings">保存并应用</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="mask" id="confirm-mask">
+  <div class="modal" style="width:440px">
+    <h3 id="confirm-title">确认操作</h3>
+    <div id="confirm-text" class="muted" style="font-size:13px"></div>
+    <div class="modal-footer">
+      <button class="btn ghost" id="confirm-cancel">取消</button>
+      <button class="btn primary" id="confirm-ok">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- URL modal -->
+<div class="mask" id="url-mask">
+  <div class="modal" style="width:520px">
+    <h3>打开 SnowLuma WebUI</h3>
+    <div class="muted" style="font-size:12.5px">浏览器可能拦截了自动跳转。请复制下面的地址手动打开。</div>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="url-field" readonly />
+      <button class="btn sm" id="url-copy">复制</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn ghost" data-act="close-url">关闭</button>
+      <a class="btn primary" id="url-open" target="_blank" rel="noopener noreferrer">打开</a>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="bridge.js"></script>
+</body>
+</html>
