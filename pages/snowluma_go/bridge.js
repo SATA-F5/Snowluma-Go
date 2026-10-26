@@ -425,8 +425,8 @@
     }
 
     const flavor = $('flavor-select');
-    if (data.config && data.config.release_flavor && flavor.value !== data.config.release_flavor && !flavor.dataset.touched) {
-      flavor.value = data.config.release_flavor;
+    if (data.release_flavor && flavor.value !== data.release_flavor && !flavor.dataset.touched) {
+      flavor.value = data.release_flavor;
     }
   }
 

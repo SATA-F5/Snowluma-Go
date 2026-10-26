@@ -539,6 +539,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             await self.stop()
             return False
         await self.refresh_accounts()
+        self._snapshot_ts = 0.0
         self._start_auto_flow()
         return True
 
@@ -957,7 +958,11 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             "installed": self.is_installed(),
             "installed_version": str(release_meta.get("version") or self.installed_version()),
             "installed_target": str(release_meta.get("target") or ""),
-            "release_flavor": str(self.plugin.config.get("release_flavor", "full") or "full"),
+            "release_flavor": (
+                ("full" if runtime.get("bundled") else "lite")
+                if self.is_installed()
+                else str(self.plugin.config.get("release_flavor", "full") or "full")
+            ),
             "running": self.is_running_check(),
             "pid": self.process.pid if self.process is not None and self.process.returncode is None else None,
             "webui_url": self.webui_url,

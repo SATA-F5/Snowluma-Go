@@ -233,7 +233,9 @@ class SnowLumaGoPlugin(Star):
 
     async def api_start(self):
         ok = await self.manager.start()
-        return json_response({"ok": ok, "message": self.manager.last_error or "SnowLuma 已启动"})
+        return json_response(
+            {"ok": ok, "message": "SnowLuma 已启动" if ok else (self.manager.last_error or "启动失败")}
+        )
 
     async def api_stop(self):
         await self.manager.stop()
@@ -241,7 +243,9 @@ class SnowLumaGoPlugin(Star):
 
     async def api_restart(self):
         ok = await self.manager.restart()
-        return json_response({"ok": ok, "message": self.manager.last_error or "SnowLuma 已重启"})
+        return json_response(
+            {"ok": ok, "message": "SnowLuma 已重启" if ok else (self.manager.last_error or "重启失败")}
+        )
 
     async def api_cleanup(self):
         try:
@@ -269,7 +273,7 @@ class SnowLumaGoPlugin(Star):
         return json_response(
             {
                 "ok": ok,
-                "message": self.manager.last_error or ("安装完成" if ok else "安装失败"),
+                "message": "安装完成" if ok else (self.manager.last_error or "安装失败"),
             }
         )
 
@@ -282,7 +286,9 @@ class SnowLumaGoPlugin(Star):
             payload = {}
         purge = bool(payload.get("purge", False))
         ok = await self.manager.uninstall(purge=purge)
-        return json_response({"ok": ok, "message": "已卸载 SnowLuma" if ok else self.manager.last_error})
+        return json_response(
+            {"ok": ok, "message": "已卸载 SnowLuma" if ok else (self.manager.last_error or "卸载失败")}
+        )
 
     async def api_releases(self):
         try:
@@ -435,6 +441,7 @@ class SnowLumaGoPlugin(Star):
 
         self.manager._installed_version = ""
         self._save_config(self.config)
+        self.manager._snapshot_ts = 0.0
         self.manager.deploy_mode = self.manager._resolve_deploy_mode()
         if self.manager.is_running_check() or self.manager.deploy_mode == "external":
             await self.manager.login()

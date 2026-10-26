@@ -270,7 +270,7 @@ class SnowLumaDownloadMixin:
         if getattr(self, "_downloading", False):
             self.download_state["message"] = "已有下载任务在进行"
             return False
-        if self.is_running():
+        if self.is_running_check():
             self._log("[install] [err] SnowLuma 正在运行，请先停止后再安装", "error")
             return False
 
@@ -321,21 +321,26 @@ class SnowLumaDownloadMixin:
 
             prefixes = self._mirror_prefixes()
             self.download_state["total_mirrors"] = len(prefixes)
-            ok = False
+            verified = False
             for idx, prefix in enumerate(prefixes, 1):
                 url = asset_url if not prefix else f"{prefix.rstrip('/')}/{asset_url}"
                 label = prefix or "official"
                 self.download_state.update({"current_index": idx, "current_mirror": label})
                 self._log(f"[download] [{idx}/{len(prefixes)}] 尝试源: {label}")
-                ok = await self._download_to_file(url, archive, label, idx, len(prefixes))
-                if ok:
+                if not await self._download_to_file(url, archive, label, idx, len(prefixes)):
+                    continue
+                # A captive portal / mirror error page may still answer 200, so
+                # validate every downloaded file before accepting a source.
+                self.download_state.update({"phase": "verifying", "message": "校验压缩包", "percent": 100})
+                if await self._verify_archive(archive):
+                    verified = True
                     break
-            if not ok:
-                raise RuntimeError("所有下载源均失败")
-
-            self.download_state.update({"phase": "verifying", "message": "校验压缩包", "percent": 100})
-            if not await self._verify_archive(archive):
-                raise RuntimeError("压缩包校验失败")
+                try:
+                    archive.unlink()
+                except Exception:
+                    pass
+            if not verified:
+                raise RuntimeError("所有下载源均失败或压缩包校验不通过")
 
             digest = self._sha256_file(archive)
             self._log(f"[download] [ok] 下载完成 {asset_name}（SHA256 {digest[:16]}…）")
@@ -358,11 +363,18 @@ class SnowLumaDownloadMixin:
             release_meta = self.read_installed_release()
             installed_tag = str(release_meta.get("version") or tag)
             self.plugin.config["snowluma_version"] = tag
+            raw = str(self.plugin.config.get("release_flavor", "full") or "full").lower()
+            self.plugin.config["release_flavor"] = "lite" if raw == "lite" else "full"
             self._installed_version = installed_tag
             try:
+                overrides = getattr(self.plugin, "_overrides", None)
+                if isinstance(overrides, set):
+                    overrides.update({"release_flavor", "snowluma_version"})
                 self.plugin._save_config(self.plugin.config)
             except Exception:
                 pass
+            self._node_cache = None
+            self._snapshot_ts = 0.0
 
             self.download_state.update({"phase": "done", "percent": 100, "message": "安装完成"})
             self._log(f"[install] [ok] SnowLuma {tag} 安装完成: {self.install_dir}")
@@ -371,6 +383,9 @@ class SnowLumaDownloadMixin:
         except Exception as e:
             self.download_state.update({"phase": "failed", "message": str(e)})
             self._log(f"[install] [err] 安装失败: {e}", "error")
+            record = getattr(self, "_record_error", None)
+            if callable(record):
+                record(f"安装失败: {e}")
             return False
         finally:
             self._downloading = False
@@ -496,10 +511,26 @@ class SnowLumaDownloadMixin:
         self.install_dir.mkdir(parents=True, exist_ok=True)
         payload_names = {entry.name for entry in payload_root.iterdir()}
 
-        # Remove only entries that the new release also ships; keep config/,
-        # data/, logs/ and anything else the operator created.
+        # Remove what the new release ships plus what the previous release
+        # declared, but never touch user-created files (config/, data/, logs/…).
+        managed = set(payload_names)
+        try:
+            import json
+
+            old_release = self.install_dir / "release.json"
+            if old_release.is_file():
+                with open(old_release, "r", encoding="utf-8-sig") as fh:
+                    old_meta = json.load(fh)
+                entries = old_meta.get("entries") if isinstance(old_meta, dict) else None
+                if isinstance(entries, list):
+                    managed.update(str(name).split("/")[0] for name in entries if name)
+        except Exception:
+            pass
+
+        # Forget the old release.json's *contents* before deleting it; the new
+        # payload supplies a fresh one.
         for entry in list(self.install_dir.iterdir()):
-            if entry.name not in payload_names:
+            if entry.name not in managed:
                 continue
             try:
                 if entry.is_dir():
