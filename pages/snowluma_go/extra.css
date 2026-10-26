@@ -1,0 +1,169 @@
+/* SnowLuma Go additions on top of the NapCat_Go console theme. */
+
+a { color: var(--primary-light); }
+
+.proc-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.proc-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: var(--glass-bg);
+    font-size: 11px;
+    backdrop-filter: blur(6px);
+}
+.proc-row .who {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.proc-row .who b { font-weight: 600; }
+.proc-row .who span {
+    color: var(--text-muted);
+    font-size: 10px;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+}
+.proc-row .acts {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.tag {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-size: 9.5px;
+    line-height: 1.4;
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.tag.ok { color: var(--success); border-color: rgba(61, 220, 151, 0.4); }
+.tag.warn { color: var(--warning); border-color: rgba(255, 207, 92, 0.4); }
+.tag.err { color: var(--danger); border-color: rgba(255, 65, 108, 0.4); }
+
+.empty-box {
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 10.5px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.5;
+}
+
+.modal-content.wide { width: 640px; }
+.modal-content .form-group input[type="password"] { font-family: 'Consolas', monospace; }
+
+.switch-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+.switch-line input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--primary-light);
+    flex-shrink: 0;
+}
+
+.btn-sm {
+    padding: 4px 11px;
+    font-size: 10.5px;
+    border-radius: 8px;
+}
+.btn[disabled], .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.mini-note {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+.mini-note code {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--warning);
+}
+
+.log-container .log-ok { color: var(--success); }
+.log-container .log-warn { color: var(--warning); }
+.log-container .log-err { color: #ff8a9b; }
+.log-container .log-ts { color: #6c7086; }
+
+.guide .guide-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.status-item .value.ok { color: var(--success); }
+.status-item .value.warn { color: var(--warning); }
+.status-item .value.err { color: var(--danger); }
+
+.install-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px;
+    gap: 8px;
+    align-items: end;
+}
+#s-webui {
+    font-family: 'Consolas', monospace;
+    font-size: 10px;
+    font-weight: 400;
+    white-space: normal;
+    word-break: break-all;
+    line-height: 1.35;
+}
+.install-grid .field-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+}
+.install-grid select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--text);
+    font-size: 12px;
+    font-family: 'Consolas', monospace;
+    outline: none;
+}
+.install-grid select:focus { border-color: var(--primary-light); }
+
+.log-header select {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 10px;
+    padding: 3px 6px;
+    outline: none;
+}
+
+@media (max-width: 900px) {
+    .big-buttons { grid-template-columns: 1fr; }
+    .webui-details { grid-column: span 1; }
+    .install-grid { grid-template-columns: 1fr; }
+}
