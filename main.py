@@ -193,6 +193,10 @@ class SnowLumaGoPlugin(Star):
     async def api_status(self):
         try:
             snapshot = await self.manager.status()
+            try:
+                self.syncer.refresh()
+            except Exception:
+                pass
             data: Dict[str, Any] = dict(snapshot)
             data["syncer"] = self.syncer.status_dict()
             data["scan"] = self.syncer.scans()
@@ -418,10 +422,12 @@ class SnowLumaGoPlugin(Star):
                 continue
             if key in payload and payload[key] is not None:
                 self.config[key] = _coerce(key, payload[key], default)
+                self._overrides.add(key)
 
         password = payload.get("webui_password")
         if isinstance(password, str) and password.strip():
             self.config["webui_password"] = encrypt_secret(password.strip())
+            self._overrides.add("webui_password")
             self.manager._load_password()
             self.manager.auth_ok = False
             if self.manager.api is not None:
@@ -433,6 +439,10 @@ class SnowLumaGoPlugin(Star):
         if self.manager.is_running_check() or self.manager.deploy_mode == "external":
             await self.manager.login()
         snapshot = await self.manager.status()
+        try:
+            self.syncer.refresh()
+        except Exception:
+            pass
         data = dict(snapshot)
         data["syncer"] = self.syncer.status_dict()
         data["scan"] = self.syncer.scans()
@@ -455,11 +465,13 @@ class SnowLumaGoPlugin(Star):
             if isinstance(loaded, dict):
                 persisted = loaded
 
+        raw_overrides = persisted.get("__overrides__")
+        self._overrides = {str(k) for k in raw_overrides} if isinstance(raw_overrides, list) else set()
+
         object_values: Dict[str, Any] = {}
         if self.astrbot_config is not None:
             try:
-                keys = self.astrbot_config.keys()
-                for key in keys:
+                for key in self.astrbot_config.keys():
                     try:
                         object_values[key] = self.astrbot_config[key]
                     except Exception:
@@ -467,35 +479,50 @@ class SnowLumaGoPlugin(Star):
             except Exception:
                 object_values = {}
 
-        merged: Dict[str, Any] = {}
-        for source in (object_values, persisted):
-            for key, value in source.items():
-                if key in DEFAULT_CONFIG:
-                    merged[key] = value
-
+        # Precedence: keys explicitly saved from the plugin panel override the
+        # AstrBot plugin-config page; everything else follows AstrBot's schema.
+        # That keeps both entry points usable instead of silently freezing the
+        # first-seen values forever.
         for key, default in DEFAULT_CONFIG.items():
             if key == "webui_password":
                 continue
-            if key in merged and merged[key] is not None:
-                config[key] = _coerce(key, merged[key], default)
+            if key in self._overrides and persisted.get(key) is not None:
+                config[key] = _coerce(key, persisted[key], default)
+            elif object_values.get(key) is not None:
+                config[key] = _coerce(key, object_values[key], default)
+            else:
+                config[key] = default
 
         stored = str(
             persisted.get("webui_password")
-            or merged.get("webui_password")
             or object_values.get("webui_password")
             or ""
         )
         plain = decrypt_secret(stored) if stored else ""
         config["webui_password"] = encrypt_secret(plain) if plain else ""
 
-        # Keep the persisted file canonical (and encrypted) on every load.
-        self._save_config(config)
+        self._persist(config)
         return config
 
-    def _save_config(self, config: Optional[Dict[str, Any]] = None) -> None:
-        data = dict(config or self.config)
-        data["__config_version__"] = CONFIG_VERSION
+    def _persist(self, config: Optional[Dict[str, Any]] = None) -> None:
+        cfg = config if config is not None else self.config
+        data: Dict[str, Any] = {
+            "__config_version__": CONFIG_VERSION,
+            "__overrides__": sorted(self._overrides),
+        }
+        for key in self._overrides:
+            if key in DEFAULT_CONFIG and key != "webui_password":
+                data[key] = cfg.get(key, DEFAULT_CONFIG[key])
+        if cfg.get("webui_password"):
+            data["webui_password"] = cfg["webui_password"]
+        if cfg.get("onboarding_done"):
+            data["onboarding_done"] = True
         write_json(self.config_path, data)
+
+    def _save_config(self, config: Optional[Dict[str, Any]] = None) -> None:
+        if config is not None:
+            self.config = config
+        self._persist()
 
     @property
     def plugin_dir(self) -> Path:

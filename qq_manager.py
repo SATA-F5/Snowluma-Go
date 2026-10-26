@@ -16,6 +16,7 @@ import os
 import platform
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -202,12 +203,18 @@ class QQManager:
         self.manager = manager
         self.launched_pids: Set[int] = set()
         self._launching = False
+        self._cache: Optional[tuple] = None
 
     # ---------------- detection ----------------
 
-    def detect(self) -> Dict[str, Any]:
+    def detect(self, *, force: bool = False) -> Dict[str, Any]:
+        """QQ installation / process snapshot (5s cache: registry + tasklist)."""
+        now = time.time()
+        if not force and self._cache is not None and now - self._cache[0] < 5:
+            return dict(self._cache[1])
+
         path = find_qq_executable(str(self.manager.plugin.config.get("qq_path", "") or ""))
-        return {
+        data = {
             "installed": bool(path),
             "path": path or "",
             "version": qq_version(),
@@ -215,6 +222,8 @@ class QQManager:
             "launched_pids": sorted(self.launched_pids),
             "platform": platform.system(),
         }
+        self._cache = (now, data)
+        return dict(data)
 
     # ---------------- launch / stop ----------------
 
@@ -229,6 +238,7 @@ class QQManager:
             }
 
         self._launching = True
+        info = self.detect(force=True)
         before = set(info["running_pids"])
         exe = info["path"]
         try:

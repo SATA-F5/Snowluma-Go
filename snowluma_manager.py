@@ -119,11 +119,13 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         self.connections: List[Dict[str, Any]] = []
         self.processes: List[Dict[str, Any]] = []
         self._auto_synced_uin = ""
+        self._auto_sync_failures = 0
         self._auto_hook_done = False
         self._qq_autostarted = False
         self._snapshot_ts = 0.0
         self._snapshot: Dict[str, Any] = {}
         self._installed_version = ""
+        self._node_cache: Optional[tuple] = None
 
         self.qq = QQManager(self)
 
@@ -264,10 +266,15 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         self._log("[auth] 已为本机 SnowLuma 生成随机 WebUI 密码（加密保存）")
         return self.password
 
-    def node_runtime(self) -> Dict[str, Any]:
+    def node_runtime(self, *, force: bool = False) -> Dict[str, Any]:
+        """Node runtime probe (cached: it spawns ``node --version``)."""
+        now = time.time()
+        if not force and self._node_cache is not None and now - self._node_cache[0] < 60:
+            return dict(self._node_cache[1])
         runtime = self.resolve_node_runtime()
         runtime["required_range"] = SNOWLUMA_NODE_RANGE
-        return runtime
+        self._node_cache = (now, runtime)
+        return dict(runtime)
 
     def _node_problem(self, runtime: Dict[str, Any]) -> str:
         if not runtime.get("chosen"):
@@ -407,6 +414,9 @@ class SnowLumaManager(SnowLumaDownloadMixin):
 
     async def ensure_api(self, *, quiet: bool = False, retries: int = 1) -> Optional[SnowLumaAPI]:
         """Return a logged-in API client or ``None`` (never raises)."""
+        if self.deploy_mode != "external" and not self.is_running_check():
+            self.last_error = "SnowLuma 未运行（未启动或进程已退出）"
+            return None
         if self.deploy_mode == "external" and not self.is_installed() and not self.password:
             self.last_error = "external 模式需要填写 SnowLuma WebUI 密码"
         self._sync_api_endpoint()
@@ -605,6 +615,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         self.connections = []
         self.processes = []
         self._auto_synced_uin = ""
+        self._auto_sync_failures = 0
         self._auto_hook_done = False
         self._qq_autostarted = False
         self._snapshot_ts = 0.0
@@ -741,6 +752,9 @@ class SnowLumaManager(SnowLumaDownloadMixin):
                 return
 
             for round_index in range(12):
+                if self.deploy_mode != "external" and not self.is_running_check():
+                    self._log("[auto] SnowLuma 进程已退出，自动流程停止")
+                    return
                 await self.refresh_accounts()
                 uin = self.primary_uin()
 
@@ -765,7 +779,15 @@ class SnowLumaManager(SnowLumaDownloadMixin):
                         self._log(f"[auto] 同步 OneBot 配置: {message}", "info" if ok else "warning")
                         if ok:
                             self._auto_synced_uin = uin
+                            self._auto_sync_failures = 0
                             self.connections = await self._safe_connections()
+                            return
+                        self._auto_sync_failures += 1
+                        if self._auto_sync_failures >= 3:
+                            self._log(
+                                "[auto] 连续 3 次自动同步失败，已停止重试；请在面板手动同步并查看错误",
+                                "warning",
+                            )
                             return
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
@@ -793,6 +815,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         if ok:
             self._refresh_paths()
             self._installed_version = ""
+            self._node_cache = None
             self.deploy_mode = "native"
             if self.is_running_check():
                 await self.login()
@@ -827,17 +850,25 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         return {"ok": True, "killed": killed, "message": "已清理运行状态"}
 
     def _kill_orphans(self) -> List[int]:
-        """Kill node processes whose command line points at our install dir."""
+        """Kill node processes that belong to *our* install directory.
+
+        Matching uses the executable path (we always spawn
+        ``<install>/node.exe|node``) and, on POSIX, the process working
+        directory — the command line only carries ``index.mjs``.
+        """
         killed: List[int] = []
         target = str(self.install_dir).lower()
         try:
             if IS_WINDOWS:
-                import json
                 import subprocess
 
+                safe = str(self.install_dir).replace("'", "''")
                 script = (
+                    f"$t='{safe}'.ToLower(); "
                     "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | "
-                    "Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
+                    "Where-Object { ($_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($t)) -or "
+                    "($_.CommandLine -and $_.CommandLine.ToLower().Contains($t)) } | "
+                    "Select-Object -ExpandProperty ProcessId"
                 )
                 proc = subprocess.run(
                     ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -846,52 +877,49 @@ class SnowLumaManager(SnowLumaDownloadMixin):
                     timeout=25,
                     creationflags=CREATE_NO_WINDOW,
                 )
-                payload = (proc.stdout or "").strip()
-                if not payload:
-                    return killed
-                data = json.loads(payload)
-                rows = data if isinstance(data, list) else [data]
-                for row in rows:
-                    if not isinstance(row, dict):
+                for line in (proc.stdout or "").splitlines():
+                    line = line.strip()
+                    if not line.isdigit():
                         continue
-                    cmdline = str(row.get("CommandLine") or "").lower()
-                    if target and target in cmdline:
-                        pid = int(row.get("ProcessId") or 0)
-                        if pid:
-                            import subprocess as sp
-
-                            sp.run(
-                                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                                stdout=sp.DEVNULL,
-                                stderr=sp.DEVNULL,
-                                creationflags=CREATE_NO_WINDOW,
-                                timeout=15,
-                            )
-                            killed.append(pid)
-                if killed:
-                    self._log(f"[cleanup] 已清理残留 node 进程: {killed}")
+                    pid = int(line)
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=CREATE_NO_WINDOW,
+                        timeout=15,
+                    )
+                    killed.append(pid)
             else:
                 for entry in Path("/proc").iterdir():
                     if not entry.name.isdigit():
                         continue
-                    try:
-                        cmdline = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode(
-                            "utf-8", errors="ignore"
-                        )
-                    except Exception:
-                        continue
-                    if "node" not in cmdline or target not in cmdline.lower():
-                        continue
                     pid = int(entry.name)
                     if pid == os.getpid():
+                        continue
+                    matched = False
+                    try:
+                        cwd = os.readlink(f"/proc/{pid}/cwd").lower()
+                        matched = cwd == target or cwd.startswith(target.rstrip("/") + "/")
+                    except Exception:
+                        pass
+                    if not matched:
+                        try:
+                            raw = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode(
+                                "utf-8", errors="ignore"
+                            )
+                            matched = target in raw.lower()
+                        except Exception:
+                            pass
+                    if not matched:
                         continue
                     try:
                         os.kill(pid, 15)
                         killed.append(pid)
                     except Exception:
                         continue
-                if killed:
-                    self._log(f"[cleanup] 已清理残留 node 进程: {killed}")
+            if killed:
+                self._log(f"[cleanup] 已清理残留 node 进程: {killed}")
         except Exception as e:
             logger.warning(f"[{PLUGIN_NAME}] orphan cleanup failed: {e}")
         return killed

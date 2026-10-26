@@ -141,6 +141,8 @@ git clone https://github.com/SATA-F5/Snowluma-Go.git
 
 配置同时支持 AstrBot 插件配置页（`_conf_schema.json`）与插件页面右上角「设置」弹窗；密码类字段始终加密落盘。
 
+生效优先级：**在插件页面保存过的键 > AstrBot 插件配置页 > 内置默认值**。也就是说，面板里改过的项不会被 AstrBot 配置页覆盖，而未在面板保存过的项仍可继续从 AstrBot 配置页调整。
+
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `auto_start` | `true` | 插件加载后自动启动 SnowLuma |
