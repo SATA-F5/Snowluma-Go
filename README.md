@@ -11,6 +11,12 @@
 
 SnowLuma Go 是 [NapCat_Go](https://github.com/SATA-F5/NC-Go) 的姊妹插件：保留「一键部署 + 自动接入」的完整操作体验，但把实现换成 SnowLuma 官方推荐的集成路径。所有网络配置都通过 REST API 校验、落盘并**热重载**，返回 `saved / applied / online` 三态，插件会把结果原样告诉你。
 
+<p align="center">
+  <img src="./docs/preview.png" alt="SnowLuma Go 控制台预览" width="94%" />
+  <br />
+  <sub>内嵌控制台预览（模拟数据）</sub>
+</p>
+
 > [!NOTE]
 > 当前仓库是**内部 beta 构建**：`metadata.yaml` 的插件版本沿用 `7.4.1`，方便与 NapCat_Go 同版本号对比测试；功能与文档会继续迭代，正式发版时再统一升版。
 
