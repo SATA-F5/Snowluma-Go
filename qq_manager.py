@@ -325,7 +325,10 @@ class QQManager:
         # A real desktop (DISPLAY=:0) should not get an openbox/x11vnc sidecar.
         # A headless server with a manually/previously started Xvfb should.
         configured_display = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
-        headless_managed = bool(configured_display) or not os.environ.get("DISPLAY")
+        env_display = os.environ.get("DISPLAY", "").strip()
+        # ":99" is the plugin's own virtual display; even if the service env
+        # already exports DISPLAY=:99 we still need to start x11vnc on it.
+        headless_managed = bool(configured_display) or not env_display or display == ":99"
         if not started and self._xvfb_proc is None and not headless_managed:
             self._display = display
             return display

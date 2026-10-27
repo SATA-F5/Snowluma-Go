@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -418,12 +419,28 @@ class SnowLumaGoPlugin(Star):
                         f"[{PLUGIN_NAME}] Linux display={display or '-'} "
                         f"vnc={vnc_state} port={vnc.get('port')} {vnc_scope}"
                     )
+                    if not vnc.get("running"):
+                        if not shutil.which("x11vnc"):
+                            logger.warning(f"[{PLUGIN_NAME}] 未找到 x11vnc，VNC 不可用")
+                        elif not display:
+                            logger.warning(f"[{PLUGIN_NAME}] 未能创建虚拟显示，VNC 不可用")
+                        else:
+                            logger.warning(
+                                f"[{PLUGIN_NAME}] x11vnc 未监听端口 {vnc.get('port')}，"
+                                "请检查 Xvfb / 端口占用"
+                            )
                 except Exception as exc:
                     logger.warning(f"[{PLUGIN_NAME}] 启动虚拟显示失败: {exc}")
             else:
                 logger.warning(
                     f"[{PLUGIN_NAME}] Linux 依赖安装失败: {result.get('message')}"
                 )
+                for step in result.get("steps", []):
+                    if not step.get("ok"):
+                        logger.warning(
+                            f"[{PLUGIN_NAME}] {step.get('command')}: "
+                            f"{shorten(str(step.get('output') or ''), 300)}"
+                        )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

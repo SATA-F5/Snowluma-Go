@@ -118,11 +118,20 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
             "x11vnc",
             "openbox",
             "scrot",
+            "imagemagick",
         ],
         timeout=600,
     )
-    steps.append({"command": "apt-get install -y xvfb x11vnc openbox scrot", "ok": code == 0, "output": output})
-    missing = [name for name in ("Xvfb", "x11vnc", "scrot") if not shutil.which(name)]
+    steps.append(
+        {
+            "command": "apt-get install -y xvfb x11vnc openbox scrot imagemagick",
+            "ok": code == 0,
+            "output": output,
+        }
+    )
+    missing = [name for name in ("Xvfb", "x11vnc") if not shutil.which(name)]
+    if not any(shutil.which(name) for name in ("scrot", "import", "ffmpeg")):
+        missing.append("scrot/imagemagick")
     if missing:
         steps.append(
             {
@@ -131,7 +140,9 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
                 "output": "缺少: " + ", ".join(missing),
             }
         )
-    ok = all(step["ok"] for step in steps)
+    # ``apt-get update`` can fail on a stale mirror while the install command
+    # still succeeds from cache; only the install result + binaries matter.
+    ok = code == 0 and not missing
     return {
         "ok": ok,
         "message": "Linux 依赖安装完成" if ok else "依赖安装失败或缺组件，请查看详情",
