@@ -470,6 +470,7 @@ class SnowLumaGoPlugin(Star):
 
     async def api_onboarding_done(self):
         self.config["onboarding_done"] = True
+        self._overrides.add("onboarding_done")
         self._save_config(self.config)
         return json_response({"ok": True})
 

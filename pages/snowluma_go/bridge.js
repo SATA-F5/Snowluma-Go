@@ -6,6 +6,7 @@
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const CHANNEL = "astrbot-plugin-page";
+    const ONBOARD_KEY = "snowluma_go_onboarded_v1";
     const STATUS_INTERVAL = 3000;
     const FAST_INTERVAL = 900;
     const LOG_INTERVAL = 2500;
@@ -23,6 +24,7 @@
         statusTimer: null,
         offlineWarned: false,
         revealedPassword: "",
+        onboarding: { steps: [], idx: 0 },
         context: {},
     };
 
@@ -447,6 +449,213 @@
         $("btn-restart").disabled = !installed || S.busy.has("restart");
         $("btn-cleanup").disabled = S.busy.has("cleanup");
         $("btn-open-install").disabled = isDownloading(status);
+    }
+
+    // ------------------------------------------------------------------
+    // Onboarding (first-run spotlight tour, same style as NapCat_Go)
+    // ------------------------------------------------------------------
+
+    function buildOnboardingSteps() {
+        const steps = [
+            {
+                type: "backdrop",
+                html: '<span class="ob-step-badge">WELCOME</span>' +
+                    '<div class="ob-welcome-title">感谢您使用<br>SnowLuma Go</div>' +
+                    '<div class="ob-welcome-sub">接下来会快速认识界面，<br>并完成第一次 AstrBot 接入。</div>',
+            },
+            {
+                type: "backdrop",
+                html: '<span class="ob-step-badge">前置 1 / 3</span>' +
+                    "<h3>在 AstrBot 中创建机器人</h3>" +
+                    "<p>打开 <b>AstrBot</b> 后台 → <code>机器人</code>：</p>" +
+                    "<ul>" +
+                    "<li>新建机器人，平台选择 <code>OneBot v11</code> 并启用；</li>" +
+                    "<li>反向 Websocket 主机填 <code>0.0.0.0</code>，端口如 <code>6199</code>；</li>" +
+                    "<li>填写一个随机 Token，稍后由插件自动写入 SnowLuma。</li>" +
+                    "</ul>" +
+                    '<img class="ob-shot" src="./assets/astbot-create-bot.png" alt="AstrBot 创建机器人">' +
+                    '<div class="ob-shot-cap">AstrBot 新建机器人界面（红框为关键填写项）</div>' +
+                    '<div class="ob-warn-box">没有可用的 OneBot v11 机器人时，「立即同步」会保持不可用。</div>',
+            },
+            {
+                type: "backdrop",
+                html: '<span class="ob-step-badge">前置 2 / 3</span>' +
+                    "<h3>安装 SnowLuma</h3>" +
+                    "<p>点击 <b>安装 / 更新</b>：</p>" +
+                    "<ul>" +
+                    "<li>优先选 <code>full</code> 发行包，自带 Node，无需额外环境；</li>" +
+                    "<li>下载走 GitHub，失败会自动切换镜像；</li>" +
+                    "<li>安装会保留 <code>config/</code>、<code>data/</code> 等用户数据。</li>" +
+                    "</ul>" +
+                    '<div class="ob-hint">国内网络建议保留默认下载镜像。</div>',
+            },
+            {
+                type: "backdrop",
+                html: '<span class="ob-step-badge">前置 3 / 3</span>' +
+                    "<h3>首次启动还需要</h3>" +
+                    "<ul>" +
+                    "<li>SnowLuma 首次使用会要求同意用户协议，点页面里的 <b>我同意</b>；</li>" +
+                    "<li>WebUI 密码由插件自动生成并加密保存，可在「WebUI 密码」处显示 / 复制，无需自己设置；</li>" +
+                    "<li>QQ 登录必须由你在 QQ 客户端里扫码或快速登录。</li>" +
+                    "</ul>" +
+                    '<div class="ob-warn-box">没有同意协议之前，同步与密码重置都会被 SnowLuma 拒绝。</div>',
+            },
+        ];
+
+        const tour = [
+            ["btn-toggle-power", "启动 / 停止", "一键启动或停止 SnowLuma。启动后插件会自动登录 WebUI 并加载账号。"],
+            ["btn-sync", "立即同步", "把 AstrBot 的 OneBot v11 反向 WS 写入 SnowLuma。需要账号在线且已同意协议；按钮灰色表示条件未满足。"],
+            ["webui-details", "打开 WebUI", "展开后可「在新页面打开」SnowLuma WebUI，也可以复制地址或密码。"],
+            ["s-run", "运行状态", "SnowLuma 是否在运行以及进程 PID。"],
+            ["s-webui", "WebUI 地址", "当前 SnowLuma WebUI 的访问地址。"],
+            ["s-login", "登录状态", "插件与 SnowLuma WebUI 的会话状态；显示「待同意协议」时先点页面里的我同意。"],
+            ["s-uin", "QQ 账号", "SnowLuma 内已登录的 QQ 账号。"],
+            ["s-bot", "AstrBot 机器人", "插件从 cmd_config.json 探测到的 OneBot v11 机器人。"],
+            ["s-sync", "上次同步", "最近一次同步的时间与结果。"],
+            ["s-password", "WebUI 密码", "自动生成并加密保存的密码，可以显示、复制或重置。"],
+            ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会尝试使用 Xvfb。"],
+            ["btn-hook-all", "全部挂载", "让 SnowLuma 挂载所有可用的 QQ 进程。"],
+            ["btn-open-install", "安装 / 更新", "安装、更新或卸载 SnowLuma，并查看下载进度。"],
+            ["log-container", "实时日志", "插件与 SnowLuma 的运行日志，出错时先看这里。"],
+        ];
+        tour.forEach(([target, title, desc], index) => {
+            steps.push({
+                type: "spotlight",
+                target,
+                html: '<span class="ob-step-badge">界面导览 ' + (index + 1) + " / " + tour.length + "</span>" +
+                    "<h3>" + title + "</h3><p>" + desc + "</p>",
+            });
+        });
+
+        steps.push({
+            type: "spotlight",
+            target: "btn-sync",
+            urgent: true,
+            html: '<span class="ob-step-badge">FINAL 重点提醒</span>' +
+                '<h3 style="color:#ffd98a;">先同意协议，再同步</h3>' +
+                "<ul>" +
+                "<li>先去同意 SnowLuma 的用户协议 / 隐私政策；</li>" +
+                "<li>确认 QQ 账号已经在线，再点「立即同步」；</li>" +
+                "</ul>" +
+                '<div class="ob-danger-box">同步成功后 AstrBot 的 OneBot v11 平台会显示在线；失败原因会写在日志区。</div>',
+        });
+        return steps;
+    }
+
+    function startOnboarding() {
+        const ob = $("onboarding");
+        if (!ob) return;
+        S.onboarding.steps = buildOnboardingSteps();
+        S.onboarding.idx = 0;
+        ob.classList.add("visible");
+        renderOnboarding();
+    }
+
+    function renderOnboarding() {
+        const ob = $("onboarding");
+        const card = $("ob-card");
+        const steps = S.onboarding.steps;
+        const index = S.onboarding.idx;
+        const step = steps[index];
+        if (!ob || !card || !step) return;
+
+        const first = index === 0;
+        const last = index === steps.length - 1;
+        card.innerHTML = step.html +
+            '<div class="ob-dots"><span style="font-size:11px;color:var(--text-muted);font-family:\'Consolas\',monospace;">' +
+            (index + 1) + " / " + steps.length + "</span></div>" +
+            '<div class="ob-actions">' +
+            '<button class="ob-btn skip" data-ob="skip">' + (first ? "跳过引导" : "不再提示") + "</button>" +
+            '<div class="ob-right">' +
+            (!first ? '<button class="ob-btn" data-ob="prev">上一步</button>' : "") +
+            '<button class="ob-btn primary" data-ob="' + (last ? "done" : "next") + '">' +
+            (last ? "开始使用" : "下一步") + "</button>" +
+            "</div></div>";
+
+        if (step.type === "backdrop") {
+            ob.classList.remove("with-spotlight");
+            ob.classList.add("with-backdrop");
+            card.style.left = "50%";
+            card.style.top = "50%";
+            card.style.transform = "translate(-50%, -50%)";
+            card.style.width = "";
+        } else {
+            ob.classList.remove("with-backdrop");
+            requestAnimationFrame(positionOnboarding);
+        }
+    }
+
+    function isElementVisible(el) {
+        if (!el) return false;
+        if (el.offsetParent === null && el.getClientRects().length === 0) return false;
+        const style = window.getComputedStyle(el);
+        return style.display !== "none" && style.visibility !== "hidden";
+    }
+
+    function positionOnboarding() {
+        const ob = $("onboarding");
+        const card = $("ob-card");
+        const spot = $("ob-spotlight");
+        const step = S.onboarding.steps[S.onboarding.idx];
+        if (!ob || !card || !spot || !step || step.type !== "spotlight") {
+            if (ob) ob.classList.remove("with-spotlight");
+            return;
+        }
+        const target = step.target ? document.getElementById(step.target) : null;
+        if (!target || !isElementVisible(target)) {
+            if (S.onboarding.idx < S.onboarding.steps.length - 1) {
+                S.onboarding.idx += 1;
+                renderOnboarding();
+            } else {
+                ob.classList.remove("with-spotlight");
+            }
+            return;
+        }
+
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        const rect = target.getBoundingClientRect();
+        const pad = 6;
+        spot.style.left = (rect.left - pad) + "px";
+        spot.style.top = (rect.top - pad) + "px";
+        spot.style.width = (rect.width + pad * 2) + "px";
+        spot.style.height = (rect.height + pad * 2) + "px";
+        spot.classList.toggle("urgent", !!step.urgent);
+
+        const cardWidth = Math.min(420, window.innerWidth - 32);
+        const cardHeight = card.offsetHeight || 280;
+        const left = Math.max(16, Math.min(window.innerWidth - cardWidth - 16, rect.left + rect.width / 2 - cardWidth / 2));
+        let top;
+        if (rect.bottom + cardHeight + 24 < window.innerHeight) top = rect.bottom + 18;
+        else if (rect.top - cardHeight - 18 > 0) top = rect.top - cardHeight - 18;
+        else top = Math.max(16, (window.innerHeight - cardHeight) / 2);
+
+        card.style.transform = "none";
+        card.style.left = left + "px";
+        card.style.top = top + "px";
+        card.style.width = cardWidth + "px";
+        ob.classList.add("with-spotlight");
+    }
+
+    function finishOnboarding() {
+        const ob = $("onboarding");
+        if (ob) ob.classList.remove("visible", "with-backdrop", "with-spotlight");
+        try { localStorage.setItem(ONBOARD_KEY, "1"); } catch (error) { /* ignore */ }
+        try { apiPost("onboarding/done").catch(() => {}); } catch (error) { /* ignore */ }
+    }
+
+    async function maybeShowOnboarding() {
+        let locallyDone = false;
+        try { locallyDone = localStorage.getItem(ONBOARD_KEY) === "1"; } catch (error) { /* ignore */ }
+        if (locallyDone) return;
+
+        let config = null;
+        try { config = await apiGet("config"); } catch (error) { /* ignore */ }
+        if (config && config.onboarding_done) {
+            try { localStorage.setItem(ONBOARD_KEY, "1"); } catch (error) { /* ignore */ }
+            return;
+        }
+        if (!S.status) return;
+        startOnboarding();
     }
 
     // ------------------------------------------------------------------
@@ -877,6 +1086,7 @@
         $("btn-refresh").addEventListener("click", () => { refreshStatus(); toast("已刷新", "ok", 1200); });
         $("btn-check-update").addEventListener("click", actionCheckUpdate);
         $("btn-open-install").addEventListener("click", () => openConfig(true));
+        $("btn-replay-guide").addEventListener("click", startOnboarding);
         $("btn-open-config").addEventListener("click", () => openConfig(false));
         $("btn-config-cancel").addEventListener("click", closeConfig);
         $("btn-config-save").addEventListener("click", saveConfig);
@@ -921,6 +1131,30 @@
                 toast("已复制", "ok", 1400);
             }
         });
+
+        $("ob-card").addEventListener("click", (event) => {
+            const button = event.target.closest("button[data-ob]");
+            if (!button) return;
+            const act = button.dataset.ob;
+            if (act === "next") {
+                S.onboarding.idx = Math.min(S.onboarding.idx + 1, S.onboarding.steps.length - 1);
+                renderOnboarding();
+            } else if (act === "prev") {
+                S.onboarding.idx = Math.max(0, S.onboarding.idx - 1);
+                renderOnboarding();
+            } else {
+                finishOnboarding();
+            }
+        });
+        window.addEventListener("resize", () => {
+            if ($("onboarding").classList.contains("visible")) {
+                const step = S.onboarding.steps[S.onboarding.idx];
+                if (step && step.type === "spotlight") positionOnboarding();
+            }
+        });
+        window.addEventListener("scroll", () => {
+            if ($("onboarding").classList.contains("with-spotlight")) positionOnboarding();
+        }, { passive: true });
 
         document.addEventListener("click", (event) => {
             const target = event.target.closest("[data-action]");
@@ -969,6 +1203,7 @@
         await refreshStatus();
         await refreshLogs();
         loadReleases(false);
+        void maybeShowOnboarding();
         setInterval(refreshLogs, LOG_INTERVAL);
         document.addEventListener("visibilitychange", () => {
             if (!document.hidden) { refreshStatus(); refreshLogs(); }
