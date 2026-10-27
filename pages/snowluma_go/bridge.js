@@ -508,12 +508,20 @@
             ["btn-sync", "立即同步", "把 AstrBot 的 OneBot v11 反向 WS 写入 SnowLuma。需要账号在线且已同意协议；按钮灰色表示条件未满足。"],
             ["webui-details", "打开 WebUI", "展开后可「在新页面打开」SnowLuma WebUI，也可以复制地址或密码。"],
             ["s-run", "运行状态", "SnowLuma 是否在运行以及进程 PID。"],
+            ["s-version", "版本", "当前安装的 SnowLuma 版本号；显示「未安装」时先到配置里安装。"],
+            ["s-mode", "运行方式", "auto / native / external；external 表示接管已有 SnowLuma，不下载也不拉起进程。"],
             ["s-webui", "WebUI 地址", "当前 SnowLuma WebUI 的访问地址。"],
             ["s-login", "登录状态", "插件与 SnowLuma WebUI 的会话状态；显示「待同意协议」时先点页面里的我同意。"],
             ["s-uin", "QQ 账号", "SnowLuma 内已登录的 QQ 账号。"],
             ["s-bot", "AstrBot 机器人", "插件从 cmd_config.json 探测到的 OneBot v11 机器人。"],
             ["s-sync", "上次同步", "最近一次同步的时间与结果。"],
+            ["s-qq", "QQ 客户端", "QQNT 的安装情况与运行进程数。"],
+            ["s-node", "Node 运行时", "SnowLuma 使用的 Node 来源与版本；full 包自带运行时。"],
+            ["s-conn", "接入连接名", "写入 SnowLuma 的 OneBot 连接名，便于在 WebUI 里辨认。"],
+            ["s-plugin", "插件版本", "当前 SnowLuma Go 插件代码版本。"],
             ["s-password", "WebUI 密码", "自动生成并加密保存的密码，可以显示、复制或重置。"],
+            ["s-install-dir", "安装目录", "本插件托管的 SnowLuma 程序目录；config/、data/ 等用户数据会保留。"],
+            ["s-astrbot-path", "AstrBot 配置", "插件探测到的 AstrBot cmd_config.json 路径。"],
             ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会尝试使用 Xvfb。"],
             ["btn-hook-all", "全部挂载", "让 SnowLuma 挂载所有可用的 QQ 进程。"],
             ["btn-open-config", "配置", "安装、更新或卸载 SnowLuma，修改下载镜像与自动化选项。"],
@@ -618,9 +626,21 @@
             return;
         }
 
-        target.scrollIntoView({ block: "nearest", inline: "nearest" });
-        const rect = target.getBoundingClientRect();
         const pad = 6;
+        const margin = 16;
+        target.scrollIntoView({ block: "nearest", inline: "nearest" });
+        let rect = target.getBoundingClientRect();
+        // `nearest` stops as soon as the element touches the viewport edge, so
+        // the 6px spotlight frame could be clipped on targets at the top or
+        // bottom (e.g. the header config button after scrolling). Pull them
+        // fully inside with a little breathing room.
+        if (rect.top - pad < margin) {
+            window.scrollBy(0, rect.top - pad - margin);
+            rect = target.getBoundingClientRect();
+        } else if (rect.bottom + pad > window.innerHeight - margin) {
+            window.scrollBy(0, rect.bottom + pad - window.innerHeight + margin);
+            rect = target.getBoundingClientRect();
+        }
         spot.style.left = (rect.left - pad) + "px";
         spot.style.top = (rect.top - pad) + "px";
         spot.style.width = (rect.width + pad * 2) + "px";
@@ -629,11 +649,29 @@
 
         const cardWidth = Math.min(420, window.innerWidth - 32);
         const cardHeight = card.offsetHeight || 280;
-        const left = Math.max(16, Math.min(window.innerWidth - cardWidth - 16, rect.left + rect.width / 2 - cardWidth / 2));
+        const clampLeft = (x) => Math.max(16, Math.min(window.innerWidth - cardWidth - 16, x));
+        const clampTop = (y) => Math.max(16, Math.min(window.innerHeight - cardHeight - 16, y));
+        let left = clampLeft(rect.left + rect.width / 2 - cardWidth / 2);
         let top;
-        if (rect.bottom + cardHeight + 24 < window.innerHeight) top = rect.bottom + 18;
-        else if (rect.top - cardHeight - 18 > 0) top = rect.top - cardHeight - 18;
-        else top = Math.max(16, (window.innerHeight - cardHeight) / 2);
+        if (rect.bottom + 18 + cardHeight <= window.innerHeight - 8) {
+            top = rect.bottom + 18;
+        } else if (rect.top - 18 - cardHeight >= 8) {
+            top = rect.top - cardHeight - 18;
+        } else {
+            // No vertical room (e.g. the tall log panel): dock the card beside
+            // the target instead of covering the spotlight.
+            const leftX = rect.left - cardWidth - 18;
+            const rightX = rect.right + 18;
+            if (leftX >= 8) {
+                left = leftX;
+                top = clampTop(rect.top + rect.height / 2 - cardHeight / 2);
+            } else if (rightX + cardWidth <= window.innerWidth - 8) {
+                left = rightX;
+                top = clampTop(rect.top + rect.height / 2 - cardHeight / 2);
+            } else {
+                top = Math.max(16, (window.innerHeight - cardHeight) / 2);
+            }
+        }
 
         card.style.transform = "none";
         card.style.left = left + "px";

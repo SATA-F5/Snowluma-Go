@@ -752,7 +752,9 @@
                         0 0 24px rgba(0, 210, 255, 0.55),
                         inset 0 0 12px rgba(0, 210, 255, 0.15);
             opacity: 0;
-            transition: all 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+            /* Never tween left/top/size: every tour step must jump straight to
+               its target instead of chasing the previous step's rectangle. */
+            transition: opacity 0.22s ease, box-shadow 0.22s ease;
             pointer-events: none;
         }
         #onboarding.with-spotlight .ob-spotlight { opacity: 1; }
@@ -783,7 +785,10 @@
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0,210,255,0.15);
             pointer-events: auto;
             opacity: 0;
-            transition: opacity 0.3s ease, transform 0.3s ease;
+            /* Position changes between the centered prerequisite cards and the
+               spotlight steps must be instant, otherwise the card slides over
+               the element that should be highlighted. */
+            transition: opacity 0.3s ease;
             text-align: center;
         }
         #onboarding.with-backdrop .ob-card {
