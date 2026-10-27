@@ -21,6 +21,7 @@
 - 新增加密保存的 sudo 密码，以及「修复 QQ 权限」「安装 Linux 依赖」按钮（chown / ptrace_scope / apt）
 - 清理 QQ 进程支持通过 sudo 结束其他系统用户启动的旧 QQ
 - 修复异步路径中的同步阻塞端口探测：状态、重连、自动流程和部署方式解析改用 `asyncio` / `to_thread`，避免卡住 AstrBot 事件循环
+- 安装 Linux 依赖后立即启动虚拟显示并探测 VNC；已有 Xvfb 时也会补启动 x11vnc，VNC 不可用时会明确提示
 
 ## 1.0.0
 

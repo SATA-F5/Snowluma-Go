@@ -408,10 +408,20 @@ class SnowLumaGoPlugin(Star):
         try:
             result = await install_linux_deps(self)
             if result.get("ok"):
-                logger.info(f"[{PLUGIN_NAME}] Linux dependencies installed")
+                logger.info(f"[{PLUGIN_NAME}] Linux 依赖安装完成，正在启动虚拟显示 / VNC")
+                try:
+                    display = await asyncio.to_thread(self.manager.qq.ensure_display)
+                    vnc = await self.manager.qq.vnc_info()
+                    logger.info(
+                        f"[{PLUGIN_NAME}] Linux display={display or '-'} "
+                        f"vnc={'running' if vnc.get('running') else 'not running'} "
+                        f"port={vnc.get('port')} local_only={vnc.get('local_only')}"
+                    )
+                except Exception as exc:
+                    logger.warning(f"[{PLUGIN_NAME}] 启动虚拟显示失败: {exc}")
             else:
                 logger.warning(
-                    f"[{PLUGIN_NAME}] Linux dependency install failed: {result.get('message')}"
+                    f"[{PLUGIN_NAME}] Linux 依赖安装失败: {result.get('message')}"
                 )
         except asyncio.CancelledError:
             raise

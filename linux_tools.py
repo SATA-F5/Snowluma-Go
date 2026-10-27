@@ -122,9 +122,18 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
         timeout=600,
     )
     steps.append({"command": "apt-get install -y xvfb x11vnc openbox scrot", "ok": code == 0, "output": output})
+    missing = [name for name in ("Xvfb", "x11vnc", "scrot") if not shutil.which(name)]
+    if missing:
+        steps.append(
+            {
+                "command": "检查依赖",
+                "ok": False,
+                "output": "缺少: " + ", ".join(missing),
+            }
+        )
     ok = all(step["ok"] for step in steps)
     return {
         "ok": ok,
-        "message": "Linux 依赖安装完成" if ok else "依赖安装失败，请查看详情",
+        "message": "Linux 依赖安装完成" if ok else "依赖安装失败或缺组件，请查看详情",
         "steps": steps,
     }

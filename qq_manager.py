@@ -318,7 +318,10 @@ class QQManager:
                 self.manager._log(f"[qq] [warn] 启动 Xvfb 失败: {shorten(str(exc), 140)}", "warning")
                 return os.environ.get("DISPLAY", "")
         # A real desktop (DISPLAY=:0) should not get an openbox/x11vnc sidecar.
-        if not started and self._xvfb_proc is None:
+        # A headless server with a manually/previously started Xvfb should.
+        configured_display = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
+        headless_managed = bool(configured_display) or not os.environ.get("DISPLAY")
+        if not started and self._xvfb_proc is None and not headless_managed:
             self._display = display
             return display
         env = {**os.environ, "DISPLAY": display}
@@ -389,6 +392,11 @@ class QQManager:
                     )
                 except Exception as exc:
                     self.manager._log(f"[qq] [warn] 启动 x11vnc 失败: {shorten(str(exc), 140)}", "warning")
+            else:
+                self.manager._log(
+                    "[qq] [warn] 未安装 x11vnc，VNC 不可用；可点「安装 Linux 依赖」",
+                    "warning",
+                )
         self._display = display
         return display
 
@@ -458,9 +466,7 @@ class QQManager:
                 "ok": False,
                 "message": "没有可用的图形显示。请先安装 Xvfb / x11vnc / scrot，或在配置里填写 DISPLAY。",
             }
-        configured_display = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
-        if self._xvfb_proc is None and not configured_display and os.environ.get("DISPLAY"):
-            return {"ok": False, "message": "当前系统已有桌面显示，请直接在 QQ 窗口中扫码"}
+
         if not running_qq_main_pids():
             result = await self.launch()
             if not result.get("ok"):
