@@ -103,6 +103,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         self._auto_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
         self._login_lock = asyncio.Lock()
+        self._start_lock = asyncio.Lock()
 
         self.deploy_mode = "native"
         self.webui_port = int(plugin.config.get("snowluma_port", DEFAULT_SNOWLUMA_PORT) or DEFAULT_SNOWLUMA_PORT)
@@ -115,6 +116,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         self.consent_required = False
         self.must_change_password = False
         self.auth_ok = False
+        self._last_login_auth_error = False
         self.accounts: List[Dict[str, Any]] = []
         self.connections: List[Dict[str, Any]] = []
         self.processes: List[Dict[str, Any]] = []
@@ -258,9 +260,37 @@ class SnowLumaManager(SnowLumaDownloadMixin):
     # Runtime preparation
     # ------------------------------------------------------------------ #
 
+    def _discard_webui_json(self, reason: str) -> None:
+        """Move an unusable config/webui.json aside.
+
+        The file only contains a one-way password hash, so if the plugin has no
+        matching plaintext the only safe recovery is to let SnowLuma seed a
+        fresh hash from ``SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD``.
+        """
+        webui_json = self.config_dir / "webui.json"
+        if not webui_json.exists():
+            return
+        backup = webui_json.with_name(f"webui.json.plugin-backup-{int(time.time())}")
+        try:
+            shutil.move(str(webui_json), str(backup))
+            self._log(f"[auth] {reason}，已备份旧 webui.json（{backup.name}）", "warning")
+        except Exception as exc:
+            try:
+                webui_json.unlink()
+                self._log(
+                    f"[auth] {reason}，已删除旧 webui.json（备份失败: {shorten(str(exc), 120)}）",
+                    "warning",
+                )
+            except Exception:
+                self._log(
+                    f"[auth] [warn] 无法清理旧 webui.json，登录可能失败: {shorten(str(exc), 120)}",
+                    "warning",
+                )
+
     def _ensure_password(self) -> str:
         if self.password:
             return self.password
+        self._discard_webui_json("插件没有可用密码")
         self.password = generate_strong_password()
         self._set_password(self.password)
         self._log("[auth] 已为本机 SnowLuma 生成随机 WebUI 密码（加密保存）")
@@ -329,6 +359,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             self._sync_api_endpoint()
             assert self.api is not None
             api = self.api
+            self._last_login_auth_error = False
 
             if not self.password:
                 self._record_error("缺少 SnowLuma WebUI 密码：请在插件配置或页面中填写")
@@ -341,6 +372,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
                 return False
             except SnowLumaAuthError as e:
                 self.auth_ok = False
+                self._last_login_auth_error = True
                 self._record_error(f"SnowLuma 登录失败: {e.message}")
                 return False
             except SnowLumaError as e:
@@ -522,6 +554,12 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         return False
 
     async def start(self) -> bool:
+        # auto-start, post-install start and the UI button can race; serialise
+        # them so only one SnowLuma process is ever spawned.
+        async with self._start_lock:
+            return await self._start_impl()
+
+    async def _start_impl(self, allow_recover: bool = True) -> bool:
         if self.deploy_mode == "external":
             return await self.connect_external()
 
@@ -572,6 +610,15 @@ class SnowLumaManager(SnowLumaDownloadMixin):
 
         self._log(f"[start] [ok] WebUI 就绪: {self.webui_url}")
         if not await self.login():
+            if allow_recover and self.deploy_mode == "native" and self._last_login_auth_error:
+                self._log(
+                    "[auth] 当前密码与现有 config/webui.json 不匹配，重新初始化凭据并重试一次",
+                    "warning",
+                )
+                await self.stop()
+                self.password = ""
+                self._ensure_password()
+                return await self._start_impl(allow_recover=False)
             await self.stop()
             return False
         await self.refresh_accounts()
