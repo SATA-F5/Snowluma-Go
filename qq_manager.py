@@ -188,7 +188,30 @@ def running_qq_pids() -> List[int]:
     return sorted(pids)
 
 
+def is_qq_helper_pid(pid: int) -> bool:
+    """Linux QQ is Electron: one launch creates many ``qq`` child processes.
+
+    They are named ``qq`` too, but carry ``--type=renderer|gpu-process|...``
+    on the command line. Treating them as separate QQ clients made the panel
+    look like it had launched half a dozen instances.
+    """
+    if IS_WINDOWS or int(pid) <= 0:
+        return False
+    try:
+        raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes()
+    except OSError:
+        return False
+    return b"--type=" in raw.replace(b"\x00", b" ")
+
+
+def running_qq_main_pids() -> List[int]:
+    return [pid for pid in running_qq_pids() if not is_qq_helper_pid(pid)]
+
+
 def is_qq_process(info: Dict[str, Any]) -> bool:
+    pid = int(info.get("pid") or 0)
+    if pid > 0 and is_qq_helper_pid(pid):
+        return False
     name = str(info.get("name") or "").lower()
     path = str(info.get("path") or "").lower()
     if name in _QQ_NAME_HINTS:
@@ -218,7 +241,8 @@ class QQManager:
             "installed": bool(path),
             "path": path or "",
             "version": qq_version(),
-            "running_pids": running_qq_pids(),
+            # Only the real QQ main process, not Electron renderer/GPU helpers.
+            "running_pids": running_qq_main_pids(),
             "launched_pids": sorted(self.launched_pids),
             "platform": platform.system(),
         }
@@ -237,9 +261,16 @@ class QQManager:
                 "message": "未检测到 QQ，请先安装 QQNT，或在配置里填写 QQ 可执行文件路径",
             }
 
-        self._launching = True
         info = self.detect(force=True)
-        before = set(info["running_pids"])
+        if info["running_pids"]:
+            return {
+                "ok": True,
+                "pids": info["running_pids"],
+                "message": "QQ 已在运行，未重复启动",
+            }
+        self._launching = True
+        before_all = set(running_qq_pids())
+        before_main = set(info["running_pids"])
         exe = info["path"]
         try:
             if IS_WINDOWS:
@@ -270,16 +301,22 @@ class QQManager:
             self.manager._log(f"[qq] 已启动 QQ: {exe}")
             for _ in range(10):
                 await asyncio.sleep(1)
-                after = set(running_qq_pids())
-                new = after - before
-                if new:
-                    self.launched_pids.update(new)
-                    self.manager._log(f"[qq] 检测到新的 QQ 进程: {sorted(new)}")
-                    return {"ok": True, "pids": sorted(new), "message": "QQ 已启动"}
+                after_all = set(running_qq_pids())
+                new_main = {
+                    pid for pid in after_all
+                    if not is_qq_helper_pid(pid)
+                } - before_main
+                if new_main:
+                    # Track the helper processes too so "stop" can clean up the
+                    # whole Electron tree, but only report the real client.
+                    self.launched_pids.update(after_all - before_all)
+                    self.manager._log(f"[qq] 检测到 QQ 主进程: {sorted(new_main)}")
+                    return {"ok": True, "pids": sorted(new_main), "message": "QQ 已启动"}
+            self.launched_pids.update(set(running_qq_pids()) - before_all)
             return {
                 "ok": True,
                 "pids": [],
-                "message": "QQ 启动命令已发出，但暂未检测到新进程（QQ 可能正在初始化）",
+                "message": "QQ 启动命令已发出，但暂未检测到主进程（QQ 可能正在初始化）",
             }
         except Exception as e:
             logger.error(f"[{PLUGIN_NAME}] launch QQ failed: {e}")

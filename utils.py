@@ -50,9 +50,10 @@ RELEASE_FLAVORS = {"full", "lite"}
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_start": True,
+    "auto_start_after_install": True,
     "auto_sync": True,
     "auto_hook": True,
-    "auto_start_qq": False,
+    "auto_start_qq": True,
     "deploy_mode": "auto",
     "snowluma_port": DEFAULT_SNOWLUMA_PORT,
     "webui_bind_host": "0.0.0.0",

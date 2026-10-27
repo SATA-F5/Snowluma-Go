@@ -269,11 +269,13 @@
 
             <div class="form-section">
                 <div class="form-section-title">自动化</div>
-                <label class="switch-line"><span>插件加载后自动启动</span><input type="checkbox" id="cfg-auto_start"></label>
+                <label class="switch-line"><span>插件加载后自动启动（需已安装）</span><input type="checkbox" id="cfg-auto_start"></label>
+                <label class="switch-line"><span>安装 / 更新完成后自动启动</span><input type="checkbox" id="cfg-auto_start_after_install"></label>
                 <label class="switch-line"><span>账号上线后自动同步 OneBot</span><input type="checkbox" id="cfg-auto_sync"></label>
-                <label class="switch-line"><span>自动挂载新 QQ 进程</span><input type="checkbox" id="cfg-auto_hook"></label>
-                <label class="switch-line"><span>启动后自动拉起 QQ</span><input type="checkbox" id="cfg-auto_start_qq"></label>
+                <label class="switch-line"><span>自动挂载新 QQ 进程（仅主进程）</span><input type="checkbox" id="cfg-auto_hook"></label>
+                <label class="switch-line"><span>启动 SnowLuma 时自动启动 QQ</span><input type="checkbox" id="cfg-auto_start_qq"></label>
                 <label class="switch-line"><span>自动同意 SnowLuma 用户协议 / 隐私政策</span><input type="checkbox" id="cfg-auto_accept_agreements"></label>
+                <div class="form-hint">自启动只会在本插件确认已安装后执行；安装完成会立即自动启动一次（可关闭）。</div>
             </div>
 
             <div class="form-section">

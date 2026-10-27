@@ -80,6 +80,7 @@ class SnowLumaGoPlugin(Star):
         self.manager = SnowLumaManager(self)
         self.manager.deploy_mode = self.manager._resolve_deploy_mode()
         self._auto_start_task: Optional[asyncio.Task] = None
+        self._post_install_task: Optional[asyncio.Task] = None
 
         self._register_routes(context)
 
@@ -189,6 +190,24 @@ class SnowLumaGoPlugin(Star):
         except Exception as exc:
             logger.error(f"[{PLUGIN_NAME}] auto_start exception: {exc}", exc_info=True)
 
+    async def _start_after_install(self) -> None:
+        """Start once the download/install task has fully released its lock."""
+        try:
+            await asyncio.sleep(0.8)
+            if self.manager.is_running_check():
+                return
+            logger.info(f"[{PLUGIN_NAME}] install finished, starting SnowLuma automatically")
+            if await self.manager.start():
+                logger.info(f"[{PLUGIN_NAME}] post-install auto_start: SnowLuma ready")
+            else:
+                logger.warning(
+                    f"[{PLUGIN_NAME}] post-install auto_start failed: {self.manager.last_error}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(f"[{PLUGIN_NAME}] post-install auto_start exception: {exc}", exc_info=True)
+
     # ------------------------------------------------------------------ #
     # Status / logs
     # ------------------------------------------------------------------ #
@@ -273,12 +292,14 @@ class SnowLumaGoPlugin(Star):
         if flavor not in (None, "full", "lite"):
             flavor = None
         ok = await self.manager.install(version=version, flavor=flavor)
-        return json_response(
-            {
-                "ok": ok,
-                "message": "安装完成" if ok else (self.manager.last_error or "安装失败"),
-            }
-        )
+        auto_starting = False
+        if ok and bool(self.config.get("auto_start_after_install", True)):
+            self._post_install_task = asyncio.ensure_future(self._start_after_install())
+            auto_starting = True
+        message = self.manager.last_error or "安装失败"
+        if ok:
+            message = "安装完成，正在自动启动 SnowLuma" if auto_starting else "安装完成"
+        return json_response({"ok": ok, "message": message, "auto_starting": auto_starting})
 
     async def api_uninstall(self):
         try:
@@ -557,13 +578,13 @@ class SnowLumaGoPlugin(Star):
     # ------------------------------------------------------------------ #
 
     async def terminate(self):
-        task = self._auto_start_task
-        if task and not task.done():
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
+        for task in (self._auto_start_task, self._post_install_task):
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
         try:
             await self.manager.stop()
         except Exception as exc:

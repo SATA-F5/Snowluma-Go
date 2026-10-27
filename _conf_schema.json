@@ -17,11 +17,17 @@
         "default": true,
         "hint": "启动 SnowLuma 时设置 SNOWLUMA_HOOK_AUTOLOAD=1，使新出现的 QQ 进程被自动挂载（等价于在 WebUI 里逐个点「加载」）。"
     },
+    "auto_start_after_install": {
+        "type": "bool",
+        "description": "安装 / 更新完成后自动启动 SnowLuma",
+        "default": true,
+        "hint": "仅在安装成功后触发；未安装时不会尝试启动。启动后若「启动 SnowLuma 时自动启动 QQ」开启，会继续联动拉起 QQ。"
+    },
     "auto_start_qq": {
         "type": "bool",
-        "description": "启动 SnowLuma 后自动拉起 QQ",
-        "default": false,
-        "hint": "仅在本机模式生效。QQ 登录仍需在弹出的窗口里扫码 / 快速登录，插件不会代替你登录。"
+        "description": "启动 SnowLuma 时自动启动 QQ",
+        "default": true,
+        "hint": "默认开启。仅在本机模式生效；若已经检测到运行中的 QQ 主进程则不会重复启动。QQ 登录仍需自行扫码 / 快速登录。"
     },
     "deploy_mode": {
         "type": "string",

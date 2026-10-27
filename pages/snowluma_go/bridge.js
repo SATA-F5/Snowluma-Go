@@ -1085,6 +1085,7 @@
         ["ws_host_override", "value"],
         ["sync_connection_name", "value"],
         ["auto_start", "check"],
+        ["auto_start_after_install", "check"],
         ["auto_sync", "check"],
         ["auto_hook", "check"],
         ["auto_start_qq", "check"],

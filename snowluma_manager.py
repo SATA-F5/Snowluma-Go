@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional
 from astrbot.api import logger
 
 from .download import SnowLumaDownloadMixin
-from .qq_manager import QQManager, is_qq_process, running_qq_pids
+from .qq_manager import QQManager, is_qq_process, running_qq_main_pids
 from .snowluma_api import (
     SnowLumaAPI,
     SnowLumaAuthError,
@@ -804,8 +804,8 @@ class SnowLumaManager(SnowLumaDownloadMixin):
                         if result.get("loaded"):
                             self._log(f"[auto] {result.get('message')}")
 
-                if not uin and bool(self.plugin.config.get("auto_start_qq", False)) and not self._qq_autostarted:
-                    if not running_qq_pids():
+                if not uin and bool(self.plugin.config.get("auto_start_qq", True)) and not self._qq_autostarted:
+                    if not running_qq_main_pids():
                         self._qq_autostarted = True
                         result = await self.qq.launch()
                         self._log(f"[auto] {result.get('message')}")
