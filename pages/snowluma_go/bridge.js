@@ -7,6 +7,7 @@
 
     const CHANNEL = "astrbot-plugin-page";
     const ONBOARD_KEY = "snowluma_go_onboarded_v1";
+    const LOCAL_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0", "[::]", "::"];
     const STATUS_INTERVAL = 3000;
     const FAST_INTERVAL = 900;
     const LOG_INTERVAL = 2500;
@@ -124,6 +125,26 @@
         return String(value == null ? "" : value)
             .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
+
+    // Remote AstrBot visitors must not be sent to their own 127.0.0.1 when
+    // SnowLuma actually runs on the server. Mirror NapCat_Go's behaviour:
+    // replace only loopback hosts with the hostname used to open this page.
+    function rewriteUrlForCurrentHost(url) {
+        if (!url) return url;
+        const currentHost = window.location.hostname;
+        if (!currentHost) return url;
+        try {
+            const parsed = new URL(url);
+            if (LOCAL_HOSTS.includes(parsed.hostname)) parsed.hostname = currentHost;
+            return parsed.toString();
+        } catch (error) {
+            return String(url).replace(/127\.0\.0\.1|localhost|0\.0\.0\.0|\[::\]/g, currentHost);
+        }
+    }
+
+    function currentWebUIUrl() {
+        return rewriteUrlForCurrentHost((S.status && S.status.webui_url) || "");
     }
 
     function toast(message, kind, duration) {
@@ -247,11 +268,11 @@
         } else if (status.running) {
             setValue("s-run", status.pid ? "运行中 · " + status.pid : "运行中", "ok");
             setValue("s-version", status.installed_version || "-", status.installed_version ? "" : "warn");
-            setValue("s-webui", status.webui_url || "-", "ok");
+            setValue("s-webui", currentWebUIUrl() || "-", "ok");
         } else {
             setValue("s-run", "已停止", "err");
             setValue("s-version", status.installed_version || "-", status.installed_version ? "" : "warn");
-            setValue("s-webui", status.webui_url || "-", "warn");
+            setValue("s-webui", currentWebUIUrl() || "-", "warn");
         }
 
         setValue("s-mode", status.deploy_mode || "-");
@@ -301,12 +322,6 @@
         setValue("s-astrbot-path", syncer.astrbot_config_path || "未找到", syncer.astrbot_config_path ? "" : "warn");
 
         renderPassword(status);
-        const webuiLink = $("btn-open-webui-newpage");
-        if (webuiLink) {
-            // A real <a target="_blank"> is used instead of window.open() so the
-            // browser cannot treat it as an async popup and block it.
-            webuiLink.href = status.running && status.webui_url ? status.webui_url : "#";
-        }
 
         // keep the sync button meaningful
         const syncBtn = $("btn-sync");
@@ -450,6 +465,7 @@
         $("btn-restart").disabled = !installed || S.busy.has("restart");
         $("btn-cleanup").disabled = S.busy.has("cleanup");
         $("btn-install").disabled = isDownloading(status);
+        $("btn-open-webui").disabled = !(running && status.webui_url);
     }
 
     // ------------------------------------------------------------------
@@ -506,7 +522,7 @@
         const tour = [
             ["btn-toggle-power", "启动 / 停止", "一键启动或停止 SnowLuma。启动后插件会自动登录 WebUI 并加载账号。"],
             ["btn-sync", "立即同步", "把 AstrBot 的 OneBot v11 反向 WS 写入 SnowLuma。需要账号在线且已同意协议；按钮灰色表示条件未满足。"],
-            ["webui-details", "打开 WebUI", "展开后可「在新页面打开」SnowLuma WebUI，也可以复制地址或密码。"],
+            ["btn-open-webui", "打开 WebUI", "弹出自定义面板，可打开 WebUI、复制自动适配后的地址与密码。"],
             ["s-run", "运行状态", "SnowLuma 是否在运行以及进程 PID。"],
             ["s-version", "版本", "当前安装的 SnowLuma 版本号；显示「未安装」时先到配置里安装。"],
             ["s-mode", "运行方式", "auto / native / external；external 表示接管已有 SnowLuma，不下载也不拉起进程。"],
@@ -870,16 +886,44 @@
         refreshStatus();
     }
 
-    function openWebUI() {
+    function openWebUIModal() {
         const status = S.status || {};
         if (!status.running || !status.webui_url) {
             toast(status.installed ? "请先启动 SnowLuma" : "请先安装并启动 SnowLuma", "warn", 3000);
             return;
         }
-        // Called synchronously from the click handler, so popup blockers allow it.
-        let win = null;
-        try { win = window.open(status.webui_url, "_blank", "noopener,noreferrer"); } catch (error) { win = null; }
-        if (!win) showUrl(status.webui_url);
+        const url = currentWebUIUrl();
+        $("webui-url-field").value = url;
+        $("webui-open-link").href = url;
+
+        const passwordField = $("webui-password-field");
+        passwordField.value = S.revealedPassword || "";
+        passwordField.type = "password";
+        passwordField.placeholder = status.password_managed ? "已保存，点击显示" : "首次启动自动生成";
+        $("btn-toggle-webui-password").textContent = "显示";
+        $("webui-modal").classList.add("visible");
+    }
+
+    async function toggleWebUIPassword() {
+        const field = $("webui-password-field");
+        const button = $("btn-toggle-webui-password");
+        if (field.type === "text") {
+            field.type = "password";
+            button.textContent = "显示";
+            return;
+        }
+        try {
+            const password = await getPasswordPlain();
+            if (!password) {
+                toast("当前还没有受管密码", "warn");
+                return;
+            }
+            field.value = password;
+            field.type = "text";
+            button.textContent = "隐藏";
+        } catch (error) {
+            toast("读取密码失败：" + error.message, "err", 4000);
+        }
     }
 
     async function copyText(text, okMessage) {
@@ -956,15 +1000,9 @@
     }
 
     async function actionCopyWebUIUrl() {
-        const url = (S.status && S.status.webui_url) || "";
+        const url = currentWebUIUrl();
         if (!url) { toast("WebUI 地址不可用", "warn", 2500); return; }
         await copyText(url, "WebUI 地址已复制");
-    }
-
-    function showUrl(url) {
-        $("url-field").value = url;
-        $("url-open-link").href = url;
-        $("url-modal").classList.add("visible");
     }
 
     // ------------------------------------------------------------------
@@ -1204,9 +1242,12 @@
         $("btn-copy-password-modal").addEventListener("click", actionCopyPassword);
         $("btn-install").addEventListener("click", actionInstall);
         $("btn-uninstall").addEventListener("click", actionUninstall);
+        $("btn-open-webui").addEventListener("click", openWebUIModal);
         $("btn-copy-webui-url").addEventListener("click", actionCopyWebUIUrl);
         $("btn-copy-webui-password").addEventListener("click", actionCopyPassword);
-        $("btn-open-webui-newpage").addEventListener("click", (event) => {
+        $("btn-toggle-webui-password").addEventListener("click", toggleWebUIPassword);
+        $("btn-close-webui").addEventListener("click", () => $("webui-modal").classList.remove("visible"));
+        $("webui-open-link").addEventListener("click", (event) => {
             const status = S.status || {};
             if (!(status.running && status.webui_url)) {
                 event.preventDefault();
@@ -1227,19 +1268,6 @@
             S.logs = [];
             renderLogs();
             refreshLogs();
-        });
-
-        $("btn-close-url").addEventListener("click", () => $("url-modal").classList.remove("visible"));
-        $("btn-copy-url").addEventListener("click", async () => {
-            const value = $("url-field").value;
-            try {
-                await navigator.clipboard.writeText(value);
-                toast("已复制", "ok", 1400);
-            } catch (error) {
-                $("url-field").select();
-                document.execCommand("copy");
-                toast("已复制", "ok", 1400);
-            }
         });
 
         $("ob-card").addEventListener("click", (event) => {
@@ -1273,7 +1301,7 @@
             if (action === "sync") { actionSync(); return; }
             if (action === "hook-load") { actionHook(Number(target.dataset.pid || 0), "load"); return; }
             if (action === "hook-unload") { actionHook(Number(target.dataset.pid || 0), "unload"); return; }
-            if (action === "open-webui") { openWebUI(); return; }
+            if (action === "open-webui") { openWebUIModal(); return; }
             if (action === "reveal-password") { actionRevealPassword(); return; }
             if (action === "copy-password") { actionCopyPassword(); return; }
             if (action === "reset-password") { actionResetPassword(); return; }

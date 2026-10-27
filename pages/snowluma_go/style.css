@@ -191,66 +191,17 @@
         }
         .big-btn.power-downloading:hover:not(:disabled) { filter: brightness(1.06); }
 
-        .webui-details {
-            position: relative;
-            grid-column: span 2;
+        .big-btn.webui { grid-column: span 2; }
+        .copy-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
         }
-        .webui-details > summary {
-            list-style: none;
-            cursor: pointer;
-            user-select: none;
+        .copy-row input {
+            flex: 1;
+            min-width: 0;
         }
-        .webui-details > summary::-webkit-details-marker { display: none; }
-        .webui-details > summary::after {
-            content: '';
-            display: inline-block;
-            margin-left: 10px;
-            border: 5px solid transparent;
-            border-top-color: currentColor;
-            transform: translateY(2px);
-            transition: transform 0.2s;
-        }
-        .webui-details[open] > summary {
-            background: var(--glass-bg-strong);
-            border-color: rgba(0, 210, 255, 0.5);
-            border-bottom-left-radius: 0;
-            border-bottom-right-radius: 0;
-        }
-        .webui-details[open] > summary::after {
-            transform: translateY(-2px) rotate(180deg);
-        }
-        .webui-details > summary:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-        .webui-menu {
-            background: rgba(15, 15, 25, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--glass-border);
-            border-top: none;
-            border-bottom-left-radius: 16px;
-            border-bottom-right-radius: 16px;
-            overflow: hidden;
-        }
-        .webui-menu-item {
-            display: block;
-            width: 100%;
-            text-align: left;
-            background: transparent;
-            border: none;
-            color: var(--text);
-            padding: 13px 18px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.18s;
-        }
-        .webui-menu-item:hover {
-            background: rgba(0, 210, 255, 0.12);
-            color: #fff;
-        }
-        .webui-menu-item + .webui-menu-item {
-            border-top: 1px solid rgba(255,255,255,0.06);
-        }
+        .copy-row .btn { flex-shrink: 0; }
 
         .download-panel {
             background: var(--glass-bg);
@@ -950,7 +901,7 @@
         }
         @media (max-width: 480px) {
             .big-buttons { grid-template-columns: 1fr; }
-            .webui-details { grid-column: span 1; }
+            .big-btn.webui { grid-column: span 1; }
             .ob-welcome-title { font-size: 32px; }
         }
     

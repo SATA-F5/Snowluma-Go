@@ -223,12 +223,6 @@ a { color: var(--primary-light); }
     gap: 8px;
     align-items: end;
 }
-a.webui-menu-item {
-    display: block;
-    text-decoration: none;
-    box-sizing: border-box;
-}
-
 .pwd-item .pwd-value {
     display: flex;
     align-items: center;
@@ -290,6 +284,6 @@ a.webui-menu-item {
 
 @media (max-width: 900px) {
     .big-buttons { grid-template-columns: 1fr; }
-    .webui-details { grid-column: span 1; }
+    .big-btn.webui { grid-column: span 1; }
     .install-grid { grid-template-columns: 1fr; }
 }
