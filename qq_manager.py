@@ -392,7 +392,7 @@ class QQManager:
         self._display = display
         return display
 
-    def vnc_info(self) -> Dict[str, Any]:
+    async def vnc_info(self) -> Dict[str, Any]:
         try:
             port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
         except (TypeError, ValueError):
@@ -400,7 +400,7 @@ class QQManager:
         return {
             "port": port,
             "display": self._display or self._display_name(),
-            "running": port_is_open("127.0.0.1", port, timeout=0.2),
+            "running": await asyncio.to_thread(port_is_open, "127.0.0.1", port, 0.2),
             "local_only": self._vnc_local_only,
         }
 
@@ -477,14 +477,14 @@ class QQManager:
                 "ok": False,
                 "message": "无法截取 QQ 窗口。请在服务器安装 scrot / imagemagick，或使用“安装 Linux 依赖”。",
                 "display": display,
-                "vnc": self.vnc_info(),
+                "vnc": await self.vnc_info(),
             }
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
         return {
             "ok": True,
             "image": "data:image/png;base64," + encoded,
             "display": display,
-            "vnc": self.vnc_info(),
+            "vnc": await self.vnc_info(),
             "message": "已截取当前虚拟屏幕",
         }
 

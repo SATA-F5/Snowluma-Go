@@ -82,7 +82,7 @@ class SnowLumaGoPlugin(Star):
         self.config = self._load_config()
         self.syncer = ConfigSyncer(self)
         self.manager = SnowLumaManager(self)
-        self.manager.deploy_mode = self.manager._resolve_deploy_mode()
+        self.manager.deploy_mode = self.manager._resolve_deploy_mode(probe=False)
         self._auto_start_task: Optional[asyncio.Task] = None
         self._post_install_task: Optional[asyncio.Task] = None
         self._linux_deps_task: Optional[asyncio.Task] = None
@@ -183,6 +183,7 @@ class SnowLumaGoPlugin(Star):
     async def _auto_start_wrapper(self) -> None:
         try:
             await asyncio.sleep(3)
+            await self.manager.refresh_deploy_mode()
             if self.manager.deploy_mode == "external" and not self.manager.password:
                 logger.warning(f"[{PLUGIN_NAME}] external 模式缺少 WebUI 密码，跳过自动连接")
                 return
@@ -203,7 +204,7 @@ class SnowLumaGoPlugin(Star):
         """Start once the download/install task has fully released its lock."""
         try:
             await asyncio.sleep(0.8)
-            if self.manager.is_running_check():
+            if await self.manager.is_running_check_async():
                 return
             logger.info(f"[{PLUGIN_NAME}] install finished, starting SnowLuma automatically")
             if await self.manager.start():
@@ -539,8 +540,8 @@ class SnowLumaGoPlugin(Star):
         self.manager._installed_version = ""
         self._save_config(self.config)
         self.manager._snapshot_ts = 0.0
-        self.manager.deploy_mode = self.manager._resolve_deploy_mode()
-        if self.manager.is_running_check() or self.manager.deploy_mode == "external":
+        await self.manager.refresh_deploy_mode()
+        if await self.manager.is_running_check_async() or self.manager.deploy_mode == "external":
             await self.manager.login()
         snapshot = await self.manager.status()
         try:

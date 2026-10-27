@@ -52,6 +52,7 @@ from .utils import (
     normalize_base_url,
     platform_asset_key,
     port_is_open,
+    port_is_open_async,
     resolve_persistent_dir,
     shorten,
 )
@@ -133,7 +134,10 @@ class SnowLumaManager(SnowLumaDownloadMixin):
 
         self._load_password()
         self._refresh_paths()
-        self.deploy_mode = self._resolve_deploy_mode()
+        # Never probe a port during plugin construction; the async status /
+        # auto-start path resolves auto+external without blocking the loop.
+        self.deploy_mode = self._resolve_deploy_mode(probe=False)
+        self._deploy_mode_probed = False
         self._sync_api_endpoint()
 
     # ------------------------------------------------------------------ #
@@ -185,7 +189,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             except Exception:
                 pass
 
-    def _resolve_deploy_mode(self) -> str:
+    def _resolve_deploy_mode(self, *, probe: bool = True) -> str:
         requested = str(self.plugin.config.get("deploy_mode", "auto") or "auto").strip().lower()
         if requested not in ("auto", "native", "external"):
             requested = "auto"
@@ -193,15 +197,23 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             return "external"
         if self.is_installed():
             return "native"
-        if requested == "auto":
+        if requested == "auto" and probe:
             external_port = int(self.plugin.config.get("external_port", DEFAULT_SNOWLUMA_PORT) or DEFAULT_SNOWLUMA_PORT)
             external_host = str(self.plugin.config.get("external_host", "127.0.0.1") or "127.0.0.1")
             if port_is_open(external_host, external_port):
                 return "external"
         return "native"
 
+    async def refresh_deploy_mode(self) -> str:
+        """Resolve auto/external detection off the event loop and cache it."""
+        mode = await asyncio.to_thread(self._resolve_deploy_mode)
+        self.deploy_mode = mode
+        self._deploy_mode_probed = True
+        self._sync_api_endpoint()
+        return mode
+
     def set_deploy_mode(self, mode: str) -> str:
-        self.deploy_mode = mode if mode in ("native", "external") else self._resolve_deploy_mode()
+        self.deploy_mode = mode if mode in ("native", "external") else self._resolve_deploy_mode(probe=False)
         self._sync_api_endpoint()
         return self.deploy_mode
 
@@ -229,15 +241,6 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             port = int(self.plugin.config.get("external_port", DEFAULT_SNOWLUMA_PORT) or DEFAULT_SNOWLUMA_PORT)
             return normalize_base_url(host, port)
         return normalize_base_url(self.webui_host, self.webui_port)
-
-    @property
-    def running(self) -> bool:
-        if self.deploy_mode == "external":
-            return self.auth_ok or port_is_open(
-                str(self.plugin.config.get("external_host", "127.0.0.1")),
-                int(self.plugin.config.get("external_port", DEFAULT_SNOWLUMA_PORT) or DEFAULT_SNOWLUMA_PORT),
-            )
-        return self.process is not None and self.process.returncode is None
 
     def is_installed(self) -> bool:
         try:
@@ -474,7 +477,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
 
     async def ensure_api(self, *, quiet: bool = False, retries: int = 1) -> Optional[SnowLumaAPI]:
         """Return a logged-in API client or ``None`` (never raises)."""
-        if self.deploy_mode != "external" and not self.is_running_check():
+        if self.deploy_mode != "external" and not await self.is_running_check_async():
             self.last_error = "SnowLuma 未运行（未启动或进程已退出）"
             return None
         if self.deploy_mode == "external" and not self.is_installed() and not self.password:
@@ -540,7 +543,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             host = self.webui_host
             port = self.webui_port
             try:
-                if port_is_open(host, port):
+                if await port_is_open_async(host, port):
                     if self.api is None:
                         self._sync_api_endpoint()
                     api = self.api
@@ -563,7 +566,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         if self.deploy_mode == "external":
             return await self.connect_external()
 
-        if self.running:
+        if await self.is_running_check_async():
             return True
         if not self.is_installed():
             self._record_error("尚未安装 SnowLuma：请先在插件页面选择版本并安装")
@@ -630,7 +633,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         self._sync_api_endpoint()
         host = str(self.plugin.config.get("external_host", "127.0.0.1") or "127.0.0.1")
         port = int(self.plugin.config.get("external_port", DEFAULT_SNOWLUMA_PORT) or DEFAULT_SNOWLUMA_PORT)
-        if not port_is_open(host, port):
+        if not await port_is_open_async(host, port):
             self._record_error(f"external 模式：无法连接 {host}:{port}")
             return False
         if not self.password:
@@ -836,7 +839,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
                 return
 
             for round_index in range(12):
-                if self.deploy_mode != "external" and not self.is_running_check():
+                if self.deploy_mode != "external" and not await self.is_running_check_async():
                     self._log("[auto] SnowLuma 进程已退出，自动流程停止")
                     return
                 await self.refresh_accounts()
@@ -892,7 +895,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
     # ------------------------------------------------------------------ #
 
     async def install(self, version: Optional[str] = None, flavor: Optional[str] = None) -> bool:
-        if self.running:
+        if await self.is_running_check_async():
             self._record_error("SnowLuma 正在运行，请先停止后再安装")
             return False
         ok = await self.install_release(version=version, flavor=flavor)
@@ -901,7 +904,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             self._installed_version = ""
             self._node_cache = None
             self.deploy_mode = "native"
-            if self.is_running_check():
+            if await self.is_running_check_async():
                 await self.login()
         return ok
 
@@ -1017,7 +1020,11 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         if self._snapshot and now - self._snapshot_ts < 1.2:
             return self._snapshot
 
-        if self.is_running_check() and self.auth_ok and now - getattr(self, "_last_refresh_ts", 0.0) > 2.0:
+        requested_mode = str(self.plugin.config.get("deploy_mode", "auto") or "auto").strip().lower()
+        if not self._deploy_mode_probed and requested_mode == "auto" and not self.is_installed():
+            await self.refresh_deploy_mode()
+
+        if await self.is_running_check_async() and self.auth_ok and now - getattr(self, "_last_refresh_ts", 0.0) > 2.0:
             await self.refresh_accounts()
             self._last_refresh_ts = time.time()
 
@@ -1027,6 +1034,11 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         accounts = self.accounts
         connections = self.connections
         processes = [info for info in self.processes if is_qq_process(info)]
+
+        redacted_config = {**self.plugin.config}
+        for secret_key in ("webui_password", "sudo_password", "vnc_password"):
+            redacted_config[secret_key] = ""
+        redacted_config["webui_password"] = mask_secret(self.password)
 
         data = {
             "platform": "Windows" if IS_WINDOWS else ("Linux" if IS_LINUX else os.name),
@@ -1046,7 +1058,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
                 if self.is_installed()
                 else str(self.plugin.config.get("release_flavor", "full") or "full")
             ),
-            "running": self.is_running_check(),
+            "running": await self.is_running_check_async(),
             "pid": self.process.pid if self.process is not None and self.process.returncode is None else None,
             "webui_url": self.webui_url,
             "webui_bind_host": self.webui_bind_host,
@@ -1074,21 +1086,23 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             "log_count": len(self.log_lines),
             "last_error": self.last_error,
             "last_error_at": self.last_error_at,
-            "config": {**self.plugin.config, "webui_password": mask_secret(self.password)},
+            "config": redacted_config,
         }
         self._snapshot = data
         self._snapshot_ts = now
         return data
 
-    def is_running_check(self) -> bool:
+    async def is_running_check_async(self) -> bool:
         if self.deploy_mode == "external":
             try:
                 host = str(self.plugin.config.get("external_host", "127.0.0.1") or "127.0.0.1")
                 port = int(self.plugin.config.get("external_port", DEFAULT_SNOWLUMA_PORT) or DEFAULT_SNOWLUMA_PORT)
-                return port_is_open(host, port, timeout=0.3)
+                return await port_is_open_async(host, port, timeout=0.3)
             except Exception:
                 return False
         return self.process is not None and self.process.returncode is None
+
+
 
     # ------------------------------------------------------------------ #
     # Misc actions used by the panel

@@ -325,7 +325,7 @@ class SnowLumaDownloadMixin:
         if getattr(self, "_downloading", False):
             self.download_state["message"] = "已有下载任务在进行"
             return False
-        if self.is_running_check():
+        if await self.is_running_check_async():
             self._log("[install] [err] SnowLuma 正在运行，请先停止后再安装", "error")
             return False
 

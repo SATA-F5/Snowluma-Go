@@ -6,6 +6,7 @@ imported on every platform AstrBot runs on.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -444,6 +445,25 @@ def port_is_open(host: str, port: int, timeout: float = 0.6) -> bool:
             return True
     except Exception:
         return False
+
+
+async def port_is_open_async(host: str, port: int, timeout: float = 0.6) -> bool:
+    """Non-blocking port probe for async request paths."""
+    writer = None
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, int(port)), timeout=timeout
+        )
+        return True
+    except Exception:
+        return False
+    finally:
+        if writer is not None:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
 
 
 def find_available_port(start: int, host: str = "127.0.0.1", tries: int = 50) -> int:
