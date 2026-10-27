@@ -46,6 +46,14 @@ from .utils import (
 MAX_ARCHIVE_MEMBERS = 20_000
 MAX_UNPACKED_BYTES = 4 * 1024 * 1024 * 1024
 
+# A mirror that starts fast and then crawls can otherwise hold the install
+# forever: aiohttp's sock_read timeout only fires when *no* bytes arrive, and
+# the total timeout is unlimited. Abort any source that stays below this
+# rolling speed after a short grace period and move to the next mirror.
+MIN_DOWNLOAD_KBPS = 20.0
+LOW_SPEED_GRACE_SECONDS = 15.0
+SPEED_WINDOW_SECONDS = 8.0
+
 
 class SnowLumaDownloadMixin:
     """Installing / upgrading SnowLuma from GitHub Releases."""
@@ -124,6 +132,7 @@ class SnowLumaDownloadMixin:
             "flavor": flavor,
             "asset_name": None,
             "asset_url": None,
+            "asset_size": 0,
             "published_at": "",
             "platform": platform_asset_key(),
         }
@@ -169,6 +178,10 @@ class SnowLumaDownloadMixin:
         if chosen is not None:
             result["asset_name"] = str(chosen.get("name"))
             result["asset_url"] = str(chosen.get("browser_download_url") or "")
+            try:
+                result["asset_size"] = int(chosen.get("size") or 0)
+            except (TypeError, ValueError):
+                result["asset_size"] = 0
         else:
             name = release_asset_name(tag, result["flavor"])
             result["asset_name"] = name
@@ -214,6 +227,9 @@ class SnowLumaDownloadMixin:
             if normalized and normalized not in prefixes:
                 prefixes.append(normalized)
 
+        # A mirror that worked for the previous install/update is the best
+        # first guess for the next one (still only for this plugin process).
+        add(str(getattr(self, "_last_good_mirror", "") or ""))
         if user:
             add(user)
         for mirror in GITHUB_MIRRORS:
@@ -221,23 +237,37 @@ class SnowLumaDownloadMixin:
         prefixes.append("")  # official last
         return prefixes
 
-    async def _download_to_file(self, url: str, dest: Path, label: str, index: int, total: int) -> bool:
+    async def _download_to_file(
+        self,
+        url: str,
+        dest: Path,
+        label: str,
+        index: int,
+        total: int,
+        expected_size: int = 0,
+    ) -> bool:
         ssl_ctx = make_ssl_context(strict=(label == "official"))
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         try:
             async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(
                     url,
-                    timeout=aiohttp.ClientTimeout(total=None, sock_connect=20, sock_read=90),
+                    timeout=aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=30),
                     headers={"User-Agent": "snowluma-go-plugin"},
                 ) as resp:
                     if resp.status != 200:
                         self._log(f"[download] {label} HTTP {resp.status}，换下一个源")
                         return False
-                    expected = int(resp.content_length or 0)
+                    content_length = int(resp.content_length or 0)
+                    # GitHub's asset metadata usually has the exact size even
+                    # when a mirror omits Content-Length; use it so the UI
+                    # doesn't sit at 0% for the whole download.
+                    expected = content_length or max(0, int(expected_size or 0))
                     received = 0
                     started = time.time()
                     last_report = started
+                    window_started = started
+                    window_received = 0
                     with open(dest, "wb") as fh:
                         async for chunk in resp.content.iter_chunked(128 * 1024):
                             fh.write(chunk)
@@ -256,6 +286,21 @@ class SnowLumaDownloadMixin:
                                     self.download_state["total_mb"] = round(expected / 1048576, 2)
                                     self.download_state["percent"] = min(99, received * 100 // expected)
                                 last_report = now
+                            if now - window_started >= SPEED_WINDOW_SECONDS:
+                                window_speed = (received - window_received) / max(
+                                    0.001, now - window_started
+                                )
+                                if now - started >= LOW_SPEED_GRACE_SECONDS and (
+                                    window_speed / 1024 < MIN_DOWNLOAD_KBPS
+                                ):
+                                    self._log(
+                                        f"[download] {label} 速度过低"
+                                        f"（{window_speed / 1024:.1f}KB/s），换下一个源",
+                                        "warning",
+                                    )
+                                    return False
+                                window_started = now
+                                window_received = received
                     if expected > 0 and received != expected:
                         self._log(
                             f"[download] {label} 大小不符（{received}/{expected}），丢弃",
@@ -310,12 +355,19 @@ class SnowLumaDownloadMixin:
             asset_url = resolved.get("asset_url") or ""
             if not asset_url:
                 raise RuntimeError("无法解析下载地址")
+            try:
+                asset_size = max(0, int(resolved.get("asset_size") or 0))
+            except (TypeError, ValueError):
+                asset_size = 0
 
             self.download_state.update(
                 {
                     "phase": "downloading",
                     "message": f"正在下载 {asset_name}",
                     "percent": 0,
+                    "downloaded_mb": 0.0,
+                    "speed_kbps": 0.0,
+                    "total_mb": round(asset_size / 1048576, 2) if asset_size else 0.0,
                 }
             )
             self._log(f"[install] 目标版本 {tag}（{self.download_state['message']}）")
@@ -335,15 +387,31 @@ class SnowLumaDownloadMixin:
             for idx, prefix in enumerate(prefixes, 1):
                 url = asset_url if not prefix else f"{prefix.rstrip('/')}/{asset_url}"
                 label = prefix or "official"
-                self.download_state.update({"current_index": idx, "current_mirror": label})
+                self.download_state.update(
+                    {
+                        "current_index": idx,
+                        "current_mirror": label,
+                        "percent": 0,
+                        "downloaded_mb": 0.0,
+                        "speed_kbps": 0.0,
+                    }
+                )
                 self._log(f"[download] [{idx}/{len(prefixes)}] 尝试源: {label}")
-                if not await self._download_to_file(url, archive, label, idx, len(prefixes)):
+                if not await self._download_to_file(
+                    url, archive, label, idx, len(prefixes), expected_size=asset_size
+                ):
+                    try:
+                        if archive.exists():
+                            archive.unlink()
+                    except Exception:
+                        pass
                     continue
                 # A captive portal / mirror error page may still answer 200, so
                 # validate every downloaded file before accepting a source.
                 self.download_state.update({"phase": "verifying", "message": "校验压缩包", "percent": 100})
                 if await self._verify_archive(archive):
                     verified = True
+                    self._last_good_mirror = prefix
                     break
                 try:
                     archive.unlink()
