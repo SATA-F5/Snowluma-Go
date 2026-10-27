@@ -50,8 +50,8 @@
     "download_mirror": {
         "type": "string",
         "description": "GitHub 下载加速前缀（可选）",
-        "default": "https://gh-proxy.com/",
-        "hint": "例如 https://gh-proxy.com/。留空则直接走官方地址；失败时仍会自动尝试内置镜像列表。"
+        "default": "https://gh.zwy.one/",
+        "hint": "默认 https://gh.zwy.one/，与 NapCat_Go 一致。下载失败时按 NapCat_Go 的内置镜像顺序自动回退，最后回退 GitHub 官方源；留空则直接使用内置镜像列表。"
     },
     "webui_password": {
         "type": "string",

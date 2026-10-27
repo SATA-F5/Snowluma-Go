@@ -33,7 +33,7 @@ CONFIG_VERSION = 1
 DEFAULT_SNOWLUMA_PORT = 5099
 DEFAULT_SNOWLUMA_VERSION = "latest"
 DEFAULT_RELEASE_FLAVOR = "full"
-DEFAULT_DOWNLOAD_MIRROR = "https://gh-proxy.com/"
+DEFAULT_DOWNLOAD_MIRROR = "https://gh.zwy.one/"
 DEFAULT_CONNECTION_NAME = "astrbot"
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -71,13 +71,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 # Mirror prefixes tried in order for GitHub release downloads.
+# Same candidates (and the same order) as the NapCat_Go plugin; the official
+# GitHub URL is always tried last by download.py.
 GITHUB_MIRRORS: List[str] = [
-    "https://gh-proxy.com/",
-    "https://ghfast.top/",
     "https://gh.zwy.one/",
-    "https://gh-proxy.net/",
-    "https://ghproxy.net/",
+    "https://raw.ihtw.moe/",
+    "https://gh.llkk.cc/",
+    "https://gh.xxooo.cf/",
+    "https://ghfile.geekertao.top/",
+    "https://ghproxy.cxkpro.top/",
+    "https://git.yylx.win/",
     "https://gh.h233.eu.org/",
+    "https://cdn.crashmc.com/",
+    "https://githubproxy.cc/",
+    "https://gh-proxy.com/",
+    "https://ghproxy.net/",
+    "https://ghfast.top/",
 ]
 
 GITHUB_API = "https://api.github.com/repos/SnowLuma/SnowLuma"

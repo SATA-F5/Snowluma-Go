@@ -134,11 +134,7 @@
                     <button class="btn" id="btn-qq-launch">启动 QQ</button>
                     <button class="btn" id="btn-hook-all">全部挂载</button>
                     <button class="btn" id="btn-restart">重启</button>
-                    <button class="btn" id="btn-cleanup">清理残留</button>
                     <button class="btn" id="btn-refresh">刷新状态</button>
-                    <button class="btn" id="btn-check-update">检查更新</button>
-                    <button class="btn" id="btn-open-install">安装 / 更新</button>
-                    <button class="btn" id="btn-replay-guide">使用引导</button>
                 </div>
 
                 <div class="guide" id="guide"></div>
@@ -213,7 +209,12 @@
                 </div>
                 <div class="form-group">
                     <label>GitHub 下载镜像（可选）</label>
-                    <input type="text" id="cfg-download_mirror" placeholder="https://gh-proxy.com/">
+                    <input type="text" id="cfg-download_mirror" placeholder="https://gh.zwy.one/" list="cfg-download-mirror-presets">
+                    <datalist id="cfg-download-mirror-presets"></datalist>
+                    <div class="form-hint">
+                        先尝试这里填写的镜像，再按 NapCat_Go 的镜像顺序自动回退，最后回退 GitHub 官方源。
+                        留空则直接使用内置镜像列表。
+                    </div>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn btn-primary" id="btn-install">安装 / 更新</button>
@@ -264,6 +265,16 @@
                 <label class="switch-line"><span>自动挂载新 QQ 进程</span><input type="checkbox" id="cfg-auto_hook"></label>
                 <label class="switch-line"><span>启动后自动拉起 QQ</span><input type="checkbox" id="cfg-auto_start_qq"></label>
                 <label class="switch-line"><span>自动同意 SnowLuma 用户协议 / 隐私政策</span><input type="checkbox" id="cfg-auto_accept_agreements"></label>
+            </div>
+
+            <div class="form-section">
+                <div class="form-section-title">维护与帮助</div>
+                <div class="aux-buttons">
+                    <button class="btn" id="btn-check-update">检查更新</button>
+                    <button class="btn" id="btn-cleanup">清理残留</button>
+                    <button class="btn" id="btn-replay-guide">使用引导</button>
+                </div>
+                <div class="form-hint">安装 / 更新、卸载在上方「版本与安装」中。</div>
             </div>
 
             <div class="form-actions">

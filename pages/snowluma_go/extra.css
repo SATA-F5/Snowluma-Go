@@ -66,6 +66,8 @@ a { color: var(--primary-light); }
 .modal-content.wide { width: 640px; }
 .modal-content .form-group input[type="password"] { font-family: 'Consolas', monospace; }
 
+.form-section .aux-buttons { margin-top: 6px; }
+
 .switch-line {
     display: flex;
     align-items: center;

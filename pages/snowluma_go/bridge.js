@@ -448,7 +448,7 @@
         $("btn-hook-all").disabled = !running || S.busy.has("hook-all");
         $("btn-restart").disabled = !installed || S.busy.has("restart");
         $("btn-cleanup").disabled = S.busy.has("cleanup");
-        $("btn-open-install").disabled = isDownloading(status);
+        $("btn-install").disabled = isDownloading(status);
     }
 
     // ------------------------------------------------------------------
@@ -481,7 +481,7 @@
                 type: "backdrop",
                 html: '<span class="ob-step-badge">前置 2 / 3</span>' +
                     "<h3>安装 SnowLuma</h3>" +
-                    "<p>点击 <b>安装 / 更新</b>：</p>" +
+                    "<p>点击右上角 <b>配置</b>，在「版本与安装」里点 <b>安装 / 更新</b>：</p>" +
                     "<ul>" +
                     "<li>优先选 <code>full</code> 发行包，自带 Node，无需额外环境；</li>" +
                     "<li>下载走 GitHub，失败会自动切换镜像；</li>" +
@@ -515,7 +515,7 @@
             ["s-password", "WebUI 密码", "自动生成并加密保存的密码，可以显示、复制或重置。"],
             ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会尝试使用 Xvfb。"],
             ["btn-hook-all", "全部挂载", "让 SnowLuma 挂载所有可用的 QQ 进程。"],
-            ["btn-open-install", "安装 / 更新", "安装、更新或卸载 SnowLuma，并查看下载进度。"],
+            ["btn-open-config", "配置", "安装、更新或卸载 SnowLuma，修改下载镜像与自动化选项。"],
             ["log-container", "实时日志", "插件与 SnowLuma 的运行日志，出错时先看这里。"],
         ];
         tour.forEach(([target, title, desc], index) => {
@@ -1006,6 +1006,11 @@
             });
             $("cfg-webui_password").value = "";
             $("cfg-webui_password").type = "password";
+            const presets = $("cfg-download-mirror-presets");
+            const mirrors = Array.isArray(config.download_mirrors) ? config.download_mirrors : [];
+            presets.innerHTML = mirrors
+                .map((mirror) => '<option value="' + esc(mirror) + '"></option>')
+                .join("");
             $("config-modal").classList.add("visible");
             if (!S.releases.length) await loadReleases(false);
             if (S.status) {
@@ -1085,8 +1090,10 @@
         $("btn-cleanup").addEventListener("click", actionCleanup);
         $("btn-refresh").addEventListener("click", () => { refreshStatus(); toast("已刷新", "ok", 1200); });
         $("btn-check-update").addEventListener("click", actionCheckUpdate);
-        $("btn-open-install").addEventListener("click", () => openConfig(true));
-        $("btn-replay-guide").addEventListener("click", startOnboarding);
+        $("btn-replay-guide").addEventListener("click", () => {
+            closeConfig();
+            startOnboarding();
+        });
         $("btn-open-config").addEventListener("click", () => openConfig(false));
         $("btn-config-cancel").addEventListener("click", closeConfig);
         $("btn-config-save").addEventListener("click", saveConfig);

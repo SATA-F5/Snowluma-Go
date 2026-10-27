@@ -32,6 +32,7 @@ from .snowluma_manager import SnowLumaManager
 from .utils import (
     CONFIG_VERSION,
     DEFAULT_CONFIG,
+    GITHUB_MIRRORS,
     IS_LINUX,
     IS_WINDOWS,
     PLUGIN_NAME,
@@ -426,6 +427,8 @@ class SnowLumaGoPlugin(Star):
     async def api_get_config(self):
         data = dict(self.config)
         data["webui_password"] = ""
+        # Read-only helper for the config dialog's mirror picker.
+        data["download_mirrors"] = list(GITHUB_MIRRORS)
         return json_response(data)
 
     async def api_save_config(self):

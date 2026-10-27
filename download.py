@@ -201,13 +201,23 @@ class SnowLumaDownloadMixin:
         )
 
     def _mirror_prefixes(self) -> List[str]:
+        """Return download prefixes: user mirror, NapCat_Go order, official.
+
+        The built-in candidates intentionally mirror the NapCat_Go plugin's
+        list and order, so both plugins reach for the fastest mirror first.
+        """
         user = str(self.plugin.config.get("download_mirror", "") or "").strip()
         prefixes: List[str] = []
+
+        def add(prefix: str) -> None:
+            normalized = prefix.rstrip("/") + "/" if prefix else ""
+            if normalized and normalized not in prefixes:
+                prefixes.append(normalized)
+
         if user:
-            prefixes.append(user)
+            add(user)
         for mirror in GITHUB_MIRRORS:
-            if mirror not in prefixes:
-                prefixes.append(mirror)
+            add(mirror)
         prefixes.append("")  # official last
         return prefixes
 
