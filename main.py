@@ -412,10 +412,11 @@ class SnowLumaGoPlugin(Star):
                 try:
                     display = await asyncio.to_thread(self.manager.qq.ensure_display)
                     vnc = await self.manager.qq.vnc_info()
+                    vnc_state = "running" if vnc.get("running") else "not running"
+                    vnc_scope = "仅本机（设置 VNC 密码后可局域网访问）" if vnc.get("local_only") else "局域网"
                     logger.info(
                         f"[{PLUGIN_NAME}] Linux display={display or '-'} "
-                        f"vnc={'running' if vnc.get('running') else 'not running'} "
-                        f"port={vnc.get('port')} local_only={vnc.get('local_only')}"
+                        f"vnc={vnc_state} port={vnc.get('port')} {vnc_scope}"
                     )
                 except Exception as exc:
                     logger.warning(f"[{PLUGIN_NAME}] 启动虚拟显示失败: {exc}")

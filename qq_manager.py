@@ -280,9 +280,14 @@ class QQManager:
 
     def _display_name(self) -> str:
         configured = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
-        if configured:
-            return configured
-        return os.environ.get("DISPLAY", "") or ":99"
+        display = configured or os.environ.get("DISPLAY", "") or ":99"
+        display = display.strip()
+        # Users often type "99" instead of ":99"; Xvfb/open_connection need the
+        # colon form. A bare numeric display was previously treated as a remote
+        # X11 target, so Xvfb/x11vnc never started.
+        if display and display[0].isdigit():
+            display = ":" + display
+        return display
 
     def _display_socket(self, display: str) -> Path:
         token = display.lstrip(":").split(".")[0]
