@@ -90,6 +90,12 @@
         "default": "",
         "hint": "留空自动从注册表 / 常见路径探测。Windows 例：C:\\Program Files\\Tencent\\QQNT\\QQ.exe；Linux 例：/opt/QQ/qq。"
     },
+    "qq_display": {
+        "type": "string",
+        "description": "Linux 下启动 QQ 使用的 DISPLAY（可选）",
+        "default": "",
+        "hint": "无桌面 Ubuntu 服务器请先启动 Xvfb + VNC（例如 DISPLAY=:99），再填 :99，这样能在 VNC 里看到二维码。留空且没有 DISPLAY 时会用不可见的 xvfb-run，无法扫码登录。"
+    },
     "qq_number": {
         "type": "string",
         "description": "机器人 QQ 号（可选）",

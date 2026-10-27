@@ -12,6 +12,28 @@ SnowLuma Go 是一个把 [SnowLuma](https://github.com/SnowLuma/SnowLuma) 一键
 - 支持多账号，以及 external 模式（接管已运行的 SnowLuma）
 - 内嵌控制台页面，并提供 `/snowluma` 管理指令
 
+## Ubuntu 无桌面服务器登录 QQ
+
+QQNT 需要图形界面才能显示二维码。无桌面的 Ubuntu 服务器建议用 Xvfb + VNC：
+
+```bash
+sudo apt update
+sudo apt install -y xvfb x11vnc openbox
+
+# 用运行 AstrBot 的同一个用户执行
+Xvfb :99 -screen 0 1280x800x24 &
+DISPLAY=:99 openbox &
+x11vnc -display :99 -forever -shared -rfbport 5900 -passwd '替换成你的VNC密码'
+```
+
+然后在插件配置里把「Linux QQ DISPLAY」填为 `:99`，保存后用 VNC 客户端连接 `服务器IP:5900`，再在面板点「启动 QQ」，即可在 VNC 里扫码登录。
+
+注意：
+
+- AstrBot、SnowLuma、QQ 必须使用同一个系统用户运行，不要用 root 启动 QQ
+- 如果 QQ 之前用 root 启动过，先停止旧进程，并修正 `~/.config/QQ` 的属主
+- VNC 暴露到公网有风险，建议只在内网使用或通过 SSH 隧道连接
+
 ## 所需环境
 
 - AstrBot `>= 4.24.1`，并已创建 OneBot v11（aiocqhttp）机器人

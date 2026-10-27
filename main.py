@@ -118,6 +118,7 @@ class SnowLumaGoPlugin(Star):
             ("password/reset", self.api_reset_password, ["POST"], "重置 WebUI 密码"),
             ("qq/launch", self.api_qq_launch, ["POST"], "启动 QQ"),
             ("qq/stop", self.api_qq_stop, ["POST"], "关闭本插件启动的 QQ"),
+            ("qq/cleanup", self.api_qq_cleanup, ["POST"], "清理当前用户的 QQ 进程"),
             ("hook/all", self.api_hook_all, ["POST"], "挂载全部 QQ 进程"),
             ("hook/load", self.api_hook_load, ["POST"], "挂载指定 QQ 进程"),
             ("hook/unload", self.api_hook_unload, ["POST"], "卸载指定 QQ 进程"),
@@ -364,6 +365,17 @@ class SnowLumaGoPlugin(Star):
             return json_response(self.manager.qq.stop_launched())
         except Exception as exc:
             return error_response(f"关闭 QQ 失败: {shorten(str(exc), 200)}")
+
+    async def api_qq_cleanup(self):
+        try:
+            result = await asyncio.to_thread(self.manager.qq.cleanup_all)
+            try:
+                await self.manager.refresh_accounts()
+            except Exception:
+                pass
+            return json_response(result)
+        except Exception as exc:
+            return error_response(f"清理 QQ 进程失败: {shorten(str(exc), 200)}")
 
     async def api_hook_all(self):
         try:

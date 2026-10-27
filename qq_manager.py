@@ -26,6 +26,7 @@ from .utils import (
     CREATE_NO_WINDOW,
     IS_WINDOWS,
     PLUGIN_NAME,
+    kill_pid_tree,
     list_pids_by_name,
     shorten,
 )
@@ -208,6 +209,23 @@ def running_qq_main_pids() -> List[int]:
     return [pid for pid in running_qq_pids() if not is_qq_helper_pid(pid)]
 
 
+def process_uid(pid: int) -> Optional[int]:
+    """Return the Linux real UID for a PID, or None when unavailable."""
+    if IS_WINDOWS or int(pid) <= 0:
+        return None
+    try:
+        for line in Path(f"/proc/{int(pid)}/status").read_text(
+            encoding="utf-8", errors="ignore"
+        ).splitlines():
+            if line.startswith("Uid:"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return int(parts[1])
+    except (OSError, ValueError):
+        return None
+    return None
+
+
 def is_qq_process(info: Dict[str, Any]) -> bool:
     pid = int(info.get("pid") or 0)
     if pid > 0 and is_qq_helper_pid(pid):
@@ -272,6 +290,10 @@ class QQManager:
         before_all = set(running_qq_pids())
         before_main = set(info["running_pids"])
         exe = info["path"]
+        display = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
+        launch_env = os.environ.copy()
+        if display:
+            launch_env["DISPLAY"] = display
         try:
             if IS_WINDOWS:
                 subprocess.Popen(
@@ -280,10 +302,11 @@ class QQManager:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     creationflags=CREATE_NO_WINDOW | 0x00000200,  # CREATE_NEW_PROCESS_GROUP
+                    env=launch_env,
                 )
             else:
                 cmd = [exe]
-                if not os.environ.get("DISPLAY") and shutil.which("xvfb-run"):
+                if not display and not os.environ.get("DISPLAY") and shutil.which("xvfb-run"):
                     cmd = [
                         "xvfb-run",
                         "-a",
@@ -291,12 +314,18 @@ class QQManager:
                         "-screen 0 1280x800x24",
                         exe,
                     ]
+                    self.manager._log(
+                        "[qq] [warn] 未配置 qq_display，使用不可见的 xvfb-run；"
+                        "无桌面服务器请先启动 Xvfb/VNC，并在配置里填写 DISPLAY（如 :99）",
+                        "warning",
+                    )
                 subprocess.Popen(
                     cmd,
                     cwd=str(Path(exe).parent),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
+                    env=launch_env,
                 )
             self.manager._log(f"[qq] 已启动 QQ: {exe}")
             for _ in range(10):
@@ -347,6 +376,60 @@ class QQManager:
         self.launched_pids.clear()
         self.manager._log(f"[qq] 已关闭本插件启动的 QQ 进程: {targets}")
         return {"ok": True, "pids": targets, "message": "已关闭本插件启动的 QQ"}
+
+    def cleanup_all(self) -> Dict[str, Any]:
+        """Kill every QQ process owned by the current user.
+
+        The explicit "清理 QQ 进程" action is allowed to touch a QQ the
+        operator started manually, but it still must not try to kill another
+        Unix user's process (that needs root and would silently fail).
+        """
+        pids = running_qq_pids()
+        if not pids:
+            return {"ok": True, "killed": [], "skipped": [], "message": "没有运行中的 QQ 进程"}
+
+        current_uid = os.getuid() if hasattr(os, "getuid") else None
+        targets: List[int] = []
+        skipped: List[Dict[str, Any]] = []
+        for pid in pids:
+            uid = process_uid(pid)
+            if current_uid is not None and uid is not None and uid != current_uid:
+                skipped.append({"pid": pid, "uid": uid})
+            else:
+                targets.append(pid)
+
+        killed: List[int] = []
+        for pid in targets:
+            try:
+                kill_pid_tree(pid)
+                killed.append(pid)
+            except Exception as exc:
+                self.manager._log(
+                    f"[qq] [warn] 结束 QQ 进程 {pid} 失败: {shorten(str(exc), 120)}",
+                    "warning",
+                )
+
+        self.launched_pids.clear()
+        # Prevent the auto flow from immediately launching QQ again after a
+        # deliberate cleanup; the manual start button still works.
+        self.manager._qq_autostarted = True
+        self._cache = None
+
+        if skipped:
+            message = (
+                f"已结束 {len(killed)} 个 QQ 进程；还有 {len(skipped)} 个属于其他系统用户，"
+                "需要 sudo 手动结束"
+            )
+            self.manager._log(f"[qq] [warn] {message}", "warning")
+        else:
+            message = f"已结束 {len(killed)} 个 QQ 进程" if killed else "没有可结束的 QQ 进程"
+        self.manager._log(f"[qq] {message}")
+        return {
+            "ok": bool(killed) or not pids,
+            "killed": killed,
+            "skipped": skipped,
+            "message": message,
+        }
 
     # ---------------- hooking ----------------
 

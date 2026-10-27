@@ -473,6 +473,7 @@
         $("btn-hook-all").disabled = !running || S.busy.has("hook-all");
         $("btn-restart").disabled = !installed || S.busy.has("restart");
         $("btn-cleanup").disabled = S.busy.has("cleanup");
+        $("btn-qq-cleanup").disabled = S.busy.has("qq-cleanup");
         $("btn-install").disabled = isDownloading(status);
         $("btn-open-webui").disabled = !(running && status.webui_url);
     }
@@ -875,6 +876,20 @@
         refreshStatus();
     }
 
+    async function actionCleanupQQ() {
+        if (!(await confirmDialog(
+            "将强制结束当前系统用户运行的 QQ 进程（包括正在登录的 QQ）。" +
+            "其他用户启动的 QQ 需要 sudo 手动结束。继续？",
+            "清理 QQ"
+        ))) return;
+        const result = await run("qq-cleanup", () => apiPost("qq/cleanup"));
+        if (result) {
+            toast(result.message || (result.ok ? "已清理 QQ 进程" : "清理 QQ 失败"),
+                result.ok ? "ok" : "err", 6000);
+        }
+        refreshStatus();
+    }
+
     async function actionCheckUpdate() {
         const result = await run("check-update", () => apiGet("update/check"));
         if (!result) return;
@@ -1081,6 +1096,7 @@
         ["download_mirror", "value"],
         ["qq_number", "value"],
         ["qq_path", "value"],
+        ["qq_display", "value"],
         ["astrbot_config_path", "value"],
         ["ws_host_override", "value"],
         ["sync_connection_name", "value"],
@@ -1223,6 +1239,7 @@
         $("btn-cleanup").addEventListener("click", actionCleanup);
         $("btn-refresh").addEventListener("click", () => { refreshStatus(); toast("已刷新", "ok", 1200); });
         $("btn-check-update").addEventListener("click", actionCheckUpdate);
+        $("btn-qq-cleanup").addEventListener("click", actionCleanupQQ);
         $("btn-replay-guide").addEventListener("click", () => {
             closeConfig();
             startOnboarding();
