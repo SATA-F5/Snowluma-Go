@@ -293,6 +293,29 @@ class QQManager:
         token = display.lstrip(":").split(".")[0]
         return Path(f"/tmp/.X11-unix/X{token}")
 
+    @staticmethod
+    def _tail_log(path: Path, limit: int = 400) -> str:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore").strip()
+            return text[-limit:]
+        except Exception:
+            return ""
+
+    def _display_alive(self, display: str) -> bool:
+        xdpyinfo = shutil.which("xdpyinfo")
+        if xdpyinfo:
+            try:
+                result = subprocess.run(
+                    [xdpyinfo, "-display", display],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
+                return result.returncode == 0
+            except Exception:
+                return False
+        return self._display_socket(display).exists()
+
     def ensure_display(self) -> str:
         """Start Xvfb/openbox/x11vnc when the host has no visible display."""
         if IS_WINDOWS:
@@ -304,24 +327,50 @@ class QQManager:
         if not display.startswith(":"):
             self._display = display
             return display
+
         started = False
-        if not self._display_socket(display).exists():
+        if not self._display_alive(display):
+            # A killed Xvfb leaves /tmp/.X11-unix/X99 and /tmp/.X99-lock
+            # behind; removing stale files is required before retrying.
+            token = display.lstrip(":").split(".")[0]
+            for stale in (self._display_socket(display), Path(f"/tmp/.X{token}-lock")):
+                try:
+                    stale.unlink()
+                except Exception:
+                    pass
             xvfb = shutil.which("Xvfb")
             if not xvfb:
-                return os.environ.get("DISPLAY", "")
-            try:
-                self._xvfb_proc = subprocess.Popen(
-                    [xvfb, display, "-screen", "0", "1280x800x24", "-ac"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
+                self.manager._log(
+                    "[qq] [warn] 未安装 Xvfb，无法创建虚拟显示；可点「安装 Linux 依赖」",
+                    "warning",
                 )
+                return os.environ.get("DISPLAY", "")
+            log_path = self.manager.persistent_dir / "xvfb.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(log_path, "ab") as log:
+                    self._xvfb_proc = subprocess.Popen(
+                        [xvfb, display, "-screen", "0", "1280x800x24", "-ac"],
+                        stdout=log,
+                        stderr=log,
+                        start_new_session=True,
+                    )
                 time.sleep(1.5)
+                code = self._xvfb_proc.poll()
+                if code is not None:
+                    self.manager._log(
+                        f"[qq] [warn] Xvfb 启动后退出（code={code}）: "
+                        f"{shorten(self._tail_log(log_path), 240)}",
+                        "warning",
+                    )
+                    self._xvfb_proc = None
+                    return os.environ.get("DISPLAY", "")
                 started = True
                 self.manager._log(f"[qq] 已启动虚拟显示 {display}")
             except Exception as exc:
                 self.manager._log(f"[qq] [warn] 启动 Xvfb 失败: {shorten(str(exc), 140)}", "warning")
                 return os.environ.get("DISPLAY", "")
+
         # A real desktop (DISPLAY=:0) should not get an openbox/x11vnc sidecar.
         # A headless server with a manually/previously started Xvfb should.
         configured_display = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
@@ -332,6 +381,7 @@ class QQManager:
         if not started and self._xvfb_proc is None and not headless_managed:
             self._display = display
             return display
+
         env = {**os.environ, "DISPLAY": display}
         if self._openbox_proc is None or self._openbox_proc.poll() is not None:
             openbox = shutil.which("openbox")
@@ -346,69 +396,96 @@ class QQManager:
                     )
                 except Exception:
                     pass
+
         try:
             port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
         except (TypeError, ValueError):
             port = 5900
         if not port_is_open("127.0.0.1", port, timeout=0.2):
             x11vnc = shutil.which("x11vnc")
-            if x11vnc:
-                raw_pw = str(self.manager.plugin.config.get("vnc_password", "") or "")
-                vnc_password = decrypt_secret(raw_pw) if raw_pw else ""
-                args = [
-                    x11vnc,
-                    "-display",
-                    display,
-                    "-forever",
-                    "-shared",
-                    "-rfbport",
-                    str(port),
-                    "-noxdamage",
-                ]
-                if vnc_password:
-                    passfile = self.manager.persistent_dir / ".vncpass"
-                    try:
-                        subprocess.run(
-                            [x11vnc, "-storepasswd", vnc_password, str(passfile)],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            timeout=15,
-                        )
-                        try:
-                            passfile.chmod(0o600)
-                        except Exception:
-                            pass
-                        args += ["-rfbauth", str(passfile)]
-                    except Exception:
-                        args += ["-localhost", "-nopw"]
-                        self._vnc_local_only = True
-                else:
-                    # Without a password never expose VNC to the LAN.
-                    args += ["-localhost", "-nopw"]
-                self._vnc_local_only = not vnc_password or "-localhost" in args
-                try:
-                    self._vnc_proc = subprocess.Popen(
-                        args,
-                        env=env,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
-                    )
-                    self.manager._log(
-                        f"[qq] 已启动 x11vnc: {display}，端口 {port}"
-                        + ("（仅本机，可用 SSH 隧道）" if self._vnc_local_only else "")
-                    )
-                except Exception as exc:
-                    self.manager._log(f"[qq] [warn] 启动 x11vnc 失败: {shorten(str(exc), 140)}", "warning")
-            else:
+            if not x11vnc:
                 self.manager._log(
                     "[qq] [warn] 未安装 x11vnc，VNC 不可用；可点「安装 Linux 依赖」",
                     "warning",
                 )
+                self._display = display
+                return display
+
+            raw_pw = str(self.manager.plugin.config.get("vnc_password", "") or "")
+            vnc_password = decrypt_secret(raw_pw) if raw_pw else ""
+            args = [
+                x11vnc,
+                "-display",
+                display,
+                "-forever",
+                "-shared",
+                "-rfbport",
+                str(port),
+                "-noxdamage",
+                "-quiet",
+            ]
+            if vnc_password:
+                passfile = self.manager.persistent_dir / ".vncpass"
+                try:
+                    subprocess.run(
+                        [x11vnc, "-storepasswd", vnc_password, str(passfile)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=15,
+                    )
+                    try:
+                        passfile.chmod(0o600)
+                    except Exception:
+                        pass
+                    args += ["-rfbauth", str(passfile)]
+                except Exception:
+                    args += ["-localhost", "-nopw"]
+                    self._vnc_local_only = True
+            else:
+                # Without a password never expose VNC to the LAN.
+                args += ["-localhost", "-nopw"]
+            self._vnc_local_only = not vnc_password or "-localhost" in args
+
+            vnc_log = self.manager.persistent_dir / "x11vnc.log"
+            vnc_log.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(vnc_log, "ab") as log:
+                    self._vnc_proc = subprocess.Popen(
+                        args,
+                        env=env,
+                        stdout=log,
+                        stderr=log,
+                        start_new_session=True,
+                    )
+                time.sleep(1.0)
+                code = self._vnc_proc.poll()
+                if code is not None:
+                    self.manager._log(
+                        f"[qq] [warn] x11vnc 启动后退出（code={code}）: "
+                        f"{shorten(self._tail_log(vnc_log), 240)}",
+                        "warning",
+                    )
+                    self._vnc_proc = None
+                else:
+                    self.manager._log(
+                        f"[qq] 已启动 x11vnc: {display}，端口 {port}"
+                        + ("（仅本机，可用 SSH 隧道）" if self._vnc_local_only else "")
+                    )
+            except Exception as exc:
+                self.manager._log(f"[qq] [warn] 启动 x11vnc 失败: {shorten(str(exc), 140)}", "warning")
+                self._vnc_proc = None
         self._display = display
         return display
 
     async def vnc_info(self) -> Dict[str, Any]:
+        if self._vnc_proc is not None and self._vnc_proc.poll() is not None:
+            code = self._vnc_proc.returncode
+            self._vnc_proc = None
+            self.manager._log(
+                f"[qq] [warn] x11vnc 已退出（code={code}）: "
+                f"{shorten(self._tail_log(self.manager.persistent_dir / 'x11vnc.log'), 200)}",
+                "warning",
+            )
         try:
             port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
         except (TypeError, ValueError):
@@ -487,9 +564,17 @@ class QQManager:
         path = self.manager.persistent_dir / "qq-login.png"
         captured = await asyncio.to_thread(self._capture_display, display, path)
         if not captured:
+            tools = [name for name in ("scrot", "import", "ffmpeg") if shutil.which(name)]
+            if not tools:
+                message = "未找到截图工具 scrot / import / ffmpeg，请点「安装 Linux 依赖」。"
+            else:
+                message = (
+                    f"截图工具 {', '.join(tools)} 已存在，但无法读取 DISPLAY={display}；"
+                    "请查看插件日志中的 Xvfb / x11vnc 错误。"
+                )
             return {
                 "ok": False,
-                "message": "无法截取 QQ 窗口。请在服务器安装 scrot / imagemagick，或使用“安装 Linux 依赖”。",
+                "message": message,
                 "display": display,
                 "vnc": await self.vnc_info(),
             }

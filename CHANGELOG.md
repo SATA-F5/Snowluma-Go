@@ -23,6 +23,7 @@
 - 修复异步路径中的同步阻塞端口探测：状态、重连、自动流程和部署方式解析改用 `asyncio` / `to_thread`，避免卡住 AstrBot 事件循环
 - 安装 Linux 依赖后立即启动虚拟显示并探测 VNC；已有 Xvfb 时也会补启动 x11vnc，VNC 不可用时会明确提示
 - DISPLAY 配置兼容 `99` / `:99` 两种写法，避免误判为远程 X11 目标而不启动 Xvfb / VNC
+- Xvfb / x11vnc 启动后会检测进程状态并记录 `xvfb.log` / `x11vnc.log`；清理陈旧 socket，截图失败时区分“缺工具”和“DISPLAY 不可用”
 
 ## 1.0.0
 

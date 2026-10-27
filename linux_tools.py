@@ -119,12 +119,13 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
             "openbox",
             "scrot",
             "imagemagick",
+            "x11-utils",
         ],
         timeout=600,
     )
     steps.append(
         {
-            "command": "apt-get install -y xvfb x11vnc openbox scrot imagemagick",
+            "command": "apt-get install -y xvfb x11vnc openbox scrot imagemagick x11-utils",
             "ok": code == 0,
             "output": output,
         }
