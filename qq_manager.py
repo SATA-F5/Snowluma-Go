@@ -12,6 +12,7 @@ chat client cannot be terminated by accident.
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import platform
 import shutil
@@ -22,12 +23,15 @@ from typing import Any, Dict, List, Optional, Set
 
 from astrbot.api import logger
 
+from .linux_tools import run_sudo, sudo_password
 from .utils import (
     CREATE_NO_WINDOW,
     IS_WINDOWS,
     PLUGIN_NAME,
+    decrypt_secret,
     kill_pid_tree,
     list_pids_by_name,
+    port_is_open,
     shorten,
 )
 
@@ -245,6 +249,11 @@ class QQManager:
         self.launched_pids: Set[int] = set()
         self._launching = False
         self._cache: Optional[tuple] = None
+        self._xvfb_proc: Optional[subprocess.Popen] = None
+        self._openbox_proc: Optional[subprocess.Popen] = None
+        self._vnc_proc: Optional[subprocess.Popen] = None
+        self._vnc_local_only = True
+        self._display = ""
 
     # ---------------- detection ----------------
 
@@ -266,6 +275,239 @@ class QQManager:
         }
         self._cache = (now, data)
         return dict(data)
+
+    # ---------------- Linux display / VNC / QR ----------------
+
+    def _display_name(self) -> str:
+        configured = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
+        if configured:
+            return configured
+        return os.environ.get("DISPLAY", "") or ":99"
+
+    def _display_socket(self, display: str) -> Path:
+        token = display.lstrip(":").split(".")[0]
+        return Path(f"/tmp/.X11-unix/X{token}")
+
+    def ensure_display(self) -> str:
+        """Start Xvfb/openbox/x11vnc when the host has no visible display."""
+        if IS_WINDOWS:
+            return ""
+        display = self._display_name()
+        if not display:
+            return ""
+        # SSH X11 forwarding / remote display (host:10.0) is used as-is.
+        if not display.startswith(":"):
+            self._display = display
+            return display
+        started = False
+        if not self._display_socket(display).exists():
+            xvfb = shutil.which("Xvfb")
+            if not xvfb:
+                return os.environ.get("DISPLAY", "")
+            try:
+                self._xvfb_proc = subprocess.Popen(
+                    [xvfb, display, "-screen", "0", "1280x800x24", "-ac"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                time.sleep(1.5)
+                started = True
+                self.manager._log(f"[qq] 已启动虚拟显示 {display}")
+            except Exception as exc:
+                self.manager._log(f"[qq] [warn] 启动 Xvfb 失败: {shorten(str(exc), 140)}", "warning")
+                return os.environ.get("DISPLAY", "")
+        # A real desktop (DISPLAY=:0) should not get an openbox/x11vnc sidecar.
+        if not started and self._xvfb_proc is None:
+            self._display = display
+            return display
+        env = {**os.environ, "DISPLAY": display}
+        if self._openbox_proc is None or self._openbox_proc.poll() is not None:
+            openbox = shutil.which("openbox")
+            if openbox:
+                try:
+                    self._openbox_proc = subprocess.Popen(
+                        [openbox],
+                        env=env,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                except Exception:
+                    pass
+        try:
+            port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
+        except (TypeError, ValueError):
+            port = 5900
+        if not port_is_open("127.0.0.1", port, timeout=0.2):
+            x11vnc = shutil.which("x11vnc")
+            if x11vnc:
+                raw_pw = str(self.manager.plugin.config.get("vnc_password", "") or "")
+                vnc_password = decrypt_secret(raw_pw) if raw_pw else ""
+                args = [
+                    x11vnc,
+                    "-display",
+                    display,
+                    "-forever",
+                    "-shared",
+                    "-rfbport",
+                    str(port),
+                    "-noxdamage",
+                ]
+                if vnc_password:
+                    passfile = self.manager.persistent_dir / ".vncpass"
+                    try:
+                        subprocess.run(
+                            [x11vnc, "-storepasswd", vnc_password, str(passfile)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=15,
+                        )
+                        try:
+                            passfile.chmod(0o600)
+                        except Exception:
+                            pass
+                        args += ["-rfbauth", str(passfile)]
+                    except Exception:
+                        args += ["-localhost", "-nopw"]
+                        self._vnc_local_only = True
+                else:
+                    # Without a password never expose VNC to the LAN.
+                    args += ["-localhost", "-nopw"]
+                self._vnc_local_only = not vnc_password or "-localhost" in args
+                try:
+                    self._vnc_proc = subprocess.Popen(
+                        args,
+                        env=env,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                    self.manager._log(
+                        f"[qq] 已启动 x11vnc: {display}，端口 {port}"
+                        + ("（仅本机，可用 SSH 隧道）" if self._vnc_local_only else "")
+                    )
+                except Exception as exc:
+                    self.manager._log(f"[qq] [warn] 启动 x11vnc 失败: {shorten(str(exc), 140)}", "warning")
+        self._display = display
+        return display
+
+    def vnc_info(self) -> Dict[str, Any]:
+        try:
+            port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
+        except (TypeError, ValueError):
+            port = 5900
+        return {
+            "port": port,
+            "display": self._display or self._display_name(),
+            "running": port_is_open("127.0.0.1", port, timeout=0.2),
+            "local_only": self._vnc_local_only,
+        }
+
+    def _capture_display(self, display: str, path: Path) -> bool:
+        if IS_WINDOWS:
+            return False
+        path.parent.mkdir(parents=True, exist_ok=True)
+        env = {**os.environ, "DISPLAY": display}
+        attempts = [
+            (["scrot", "-o", str(path)], "scrot"),
+            (["import", "-display", display, "-window", "root", str(path)], "import"),
+            (
+                [
+                    "ffmpeg",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-f",
+                    "x11grab",
+                    "-video_size",
+                    "1280x800",
+                    "-i",
+                    display,
+                    "-frames:v",
+                    "1",
+                    str(path),
+                ],
+                "ffmpeg",
+            ),
+        ]
+        for command, executable in attempts:
+            if not shutil.which(executable):
+                continue
+            try:
+                subprocess.run(
+                    command,
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=25,
+                    check=False,
+                )
+                if path.is_file() and path.stat().st_size > 1024:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def login_qr(self) -> Dict[str, Any]:
+        if IS_WINDOWS:
+            return {"ok": False, "message": "Windows 会直接显示 QQ 登录窗口，无需截图"}
+        display = await asyncio.to_thread(self.ensure_display)
+        if not display:
+            return {
+                "ok": False,
+                "message": "没有可用的图形显示。请先安装 Xvfb / x11vnc / scrot，或在配置里填写 DISPLAY。",
+            }
+        configured_display = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
+        if self._xvfb_proc is None and not configured_display and os.environ.get("DISPLAY"):
+            return {"ok": False, "message": "当前系统已有桌面显示，请直接在 QQ 窗口中扫码"}
+        if not running_qq_main_pids():
+            result = await self.launch()
+            if not result.get("ok"):
+                return result
+            # QQ needs a moment to paint the login window; the user can refresh
+            # if the first capture is still blank.
+            await asyncio.sleep(2.5)
+        else:
+            await asyncio.sleep(0.4)
+        path = self.manager.persistent_dir / "qq-login.png"
+        captured = await asyncio.to_thread(self._capture_display, display, path)
+        if not captured:
+            return {
+                "ok": False,
+                "message": "无法截取 QQ 窗口。请在服务器安装 scrot / imagemagick，或使用“安装 Linux 依赖”。",
+                "display": display,
+                "vnc": self.vnc_info(),
+            }
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        return {
+            "ok": True,
+            "image": "data:image/png;base64," + encoded,
+            "display": display,
+            "vnc": self.vnc_info(),
+            "message": "已截取当前虚拟屏幕",
+        }
+
+    def stop_vnc(self) -> None:
+        if self._vnc_proc is not None and self._vnc_proc.poll() is None:
+            try:
+                self._vnc_proc.terminate()
+            except Exception:
+                pass
+        self._vnc_proc = None
+
+    def shutdown_display(self) -> None:
+        for proc in (self._vnc_proc, self._openbox_proc, self._xvfb_proc):
+            if proc is None:
+                continue
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+            except Exception:
+                pass
+        self._vnc_proc = None
+        self._openbox_proc = None
+        self._xvfb_proc = None
 
     # ---------------- launch / stop ----------------
 
@@ -290,7 +532,7 @@ class QQManager:
         before_all = set(running_qq_pids())
         before_main = set(info["running_pids"])
         exe = info["path"]
-        display = str(self.manager.plugin.config.get("qq_display", "") or "").strip()
+        display = await asyncio.to_thread(self.ensure_display) if not IS_WINDOWS else ""
         launch_env = os.environ.copy()
         if display:
             launch_env["DISPLAY"] = display
@@ -377,37 +619,51 @@ class QQManager:
         self.manager._log(f"[qq] 已关闭本插件启动的 QQ 进程: {targets}")
         return {"ok": True, "pids": targets, "message": "已关闭本插件启动的 QQ"}
 
-    def cleanup_all(self) -> Dict[str, Any]:
-        """Kill every QQ process owned by the current user.
-
-        The explicit "清理 QQ 进程" action is allowed to touch a QQ the
-        operator started manually, but it still must not try to kill another
-        Unix user's process (that needs root and would silently fail).
-        """
+    async def cleanup_all(self) -> Dict[str, Any]:
+        """Kill QQ processes owned by this user, plus foreign ones via sudo."""
         pids = running_qq_pids()
         if not pids:
             return {"ok": True, "killed": [], "skipped": [], "message": "没有运行中的 QQ 进程"}
 
         current_uid = os.getuid() if hasattr(os, "getuid") else None
         targets: List[int] = []
-        skipped: List[Dict[str, Any]] = []
+        foreign: List[int] = []
         for pid in pids:
             uid = process_uid(pid)
             if current_uid is not None and uid is not None and uid != current_uid:
-                skipped.append({"pid": pid, "uid": uid})
+                foreign.append(pid)
             else:
                 targets.append(pid)
 
         killed: List[int] = []
+        skipped: List[Dict[str, Any]] = []
         for pid in targets:
             try:
-                kill_pid_tree(pid)
+                await asyncio.to_thread(kill_pid_tree, pid)
                 killed.append(pid)
             except Exception as exc:
                 self.manager._log(
                     f"[qq] [warn] 结束 QQ 进程 {pid} 失败: {shorten(str(exc), 120)}",
                     "warning",
                 )
+
+        # An old root-owned QQ is exactly why the panel can see a process but
+        # SnowLuma cannot hook it. Use the encrypted sudo password for these.
+        if foreign:
+            if sudo_password(self.manager.plugin):
+                code, output = await run_sudo(
+                    self.manager.plugin,
+                    ["kill", "-9", *[str(pid) for pid in foreign]],
+                    timeout=30,
+                )
+                if code == 0:
+                    killed.extend(foreign)
+                    self.manager._log(f"[qq] 已通过 sudo 结束其他用户的 QQ 进程: {sorted(foreign)}")
+                else:
+                    skipped.extend({"pid": pid, "uid": process_uid(pid)} for pid in foreign)
+                    self.manager._log(f"[qq] [warn] sudo 清理其他用户 QQ 失败: {shorten(output, 160)}", "warning")
+            else:
+                skipped.extend({"pid": pid, "uid": process_uid(pid)} for pid in foreign)
 
         self.launched_pids.clear()
         # Prevent the auto flow from immediately launching QQ again after a
@@ -418,7 +674,7 @@ class QQManager:
         if skipped:
             message = (
                 f"已结束 {len(killed)} 个 QQ 进程；还有 {len(skipped)} 个属于其他系统用户，"
-                "需要 sudo 手动结束"
+                "请配置 sudo 密码或手动结束"
             )
             self.manager._log(f"[qq] [warn] {message}", "warning")
         else:

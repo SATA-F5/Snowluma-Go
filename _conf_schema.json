@@ -94,7 +94,27 @@
         "type": "string",
         "description": "Linux 下启动 QQ 使用的 DISPLAY（可选）",
         "default": "",
-        "hint": "无桌面 Ubuntu 服务器请先启动 Xvfb + VNC（例如 DISPLAY=:99），再填 :99，这样能在 VNC 里看到二维码。留空且没有 DISPLAY 时会用不可见的 xvfb-run，无法扫码登录。"
+        "hint": "无桌面 Ubuntu 服务器建议留空或填 :99。插件会自动启动 Xvfb，并在 WebUI 里提供截图二维码；也可以配合手动启动的 VNC 使用。"
+    },
+    "vnc_port": {
+        "type": "int",
+        "description": "VNC 端口",
+        "default": 5900,
+        "hint": "插件在无显示环境启动 x11vnc 时使用；WebUI 会显示该端口。"
+    },
+    "vnc_password": {
+        "type": "string",
+        "description": "VNC 密码（可选）",
+        "default": "",
+        "secret": true,
+        "hint": "留空时 x11vnc 仅监听本机（可通过 SSH 隧道访问）；填写后允许局域网 VNC 连接。密码加密保存。"
+    },
+    "sudo_password": {
+        "type": "string",
+        "description": "Linux sudo 密码（可选）",
+        "default": "",
+        "secret": true,
+        "hint": "用于修复 QQ 目录权限、设置 ptrace_scope、安装 Xvfb/VNC 依赖等命令；加密保存，不会回显。"
     },
     "qq_number": {
         "type": "string",

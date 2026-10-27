@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover
     AstrBotConfig = dict  # type: ignore
 
 from .config_syncer import ConfigSyncer
+from .linux_tools import fix_qq_permissions, install_linux_deps
 from .snowluma_manager import SnowLumaManager
 from .utils import (
     CONFIG_VERSION,
@@ -46,6 +47,9 @@ from .utils import (
 )  # noqa: F401  (read_json/write_json are kept for future migrations)
 
 PLUGIN_CODE_VERSION = "1.0.1"
+
+# Stored encrypted at rest and never returned by the config API.
+SECRET_KEYS = ("webui_password", "sudo_password", "vnc_password")
 
 
 def _coerce(key: str, value: Any, default: Any) -> Any:
@@ -81,6 +85,7 @@ class SnowLumaGoPlugin(Star):
         self.manager.deploy_mode = self.manager._resolve_deploy_mode()
         self._auto_start_task: Optional[asyncio.Task] = None
         self._post_install_task: Optional[asyncio.Task] = None
+        self._linux_deps_task: Optional[asyncio.Task] = None
 
         self._register_routes(context)
 
@@ -119,6 +124,9 @@ class SnowLumaGoPlugin(Star):
             ("qq/launch", self.api_qq_launch, ["POST"], "启动 QQ"),
             ("qq/stop", self.api_qq_stop, ["POST"], "关闭本插件启动的 QQ"),
             ("qq/cleanup", self.api_qq_cleanup, ["POST"], "清理当前用户的 QQ 进程"),
+            ("qq/login-qr", self.api_qq_login_qr, ["POST"], "截取 QQ 登录二维码"),
+            ("linux/fix-permissions", self.api_linux_fix_permissions, ["POST"], "修复 QQ 权限"),
+            ("linux/install-deps", self.api_linux_install_deps, ["POST"], "安装 Linux 依赖"),
             ("hook/all", self.api_hook_all, ["POST"], "挂载全部 QQ 进程"),
             ("hook/load", self.api_hook_load, ["POST"], "挂载指定 QQ 进程"),
             ("hook/unload", self.api_hook_unload, ["POST"], "卸载指定 QQ 进程"),
@@ -368,7 +376,7 @@ class SnowLumaGoPlugin(Star):
 
     async def api_qq_cleanup(self):
         try:
-            result = await asyncio.to_thread(self.manager.qq.cleanup_all)
+            result = await self.manager.qq.cleanup_all()
             try:
                 await self.manager.refresh_accounts()
             except Exception:
@@ -376,6 +384,38 @@ class SnowLumaGoPlugin(Star):
             return json_response(result)
         except Exception as exc:
             return error_response(f"清理 QQ 进程失败: {shorten(str(exc), 200)}")
+
+    async def api_qq_login_qr(self):
+        try:
+            return json_response(await self.manager.qq.login_qr())
+        except Exception as exc:
+            return error_response(f"截取 QQ 登录二维码失败: {shorten(str(exc), 200)}")
+
+    async def api_linux_fix_permissions(self):
+        try:
+            return json_response(await fix_qq_permissions(self))
+        except Exception as exc:
+            return error_response(f"修复权限失败: {shorten(str(exc), 200)}")
+
+    async def api_linux_install_deps(self):
+        if self._linux_deps_task and not self._linux_deps_task.done():
+            return json_response({"ok": True, "message": "Linux 依赖正在安装中，请查看插件日志"})
+        self._linux_deps_task = asyncio.ensure_future(self._run_linux_deps())
+        return json_response({"ok": True, "message": "已开始安装 Linux 依赖，请稍后查看插件日志"})
+
+    async def _run_linux_deps(self) -> None:
+        try:
+            result = await install_linux_deps(self)
+            if result.get("ok"):
+                logger.info(f"[{PLUGIN_NAME}] Linux dependencies installed")
+            else:
+                logger.warning(
+                    f"[{PLUGIN_NAME}] Linux dependency install failed: {result.get('message')}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(f"[{PLUGIN_NAME}] Linux dependency install exception: {exc}", exc_info=True)
 
     async def api_hook_all(self):
         try:
@@ -459,7 +499,8 @@ class SnowLumaGoPlugin(Star):
 
     async def api_get_config(self):
         data = dict(self.config)
-        data["webui_password"] = ""
+        for key in SECRET_KEYS:
+            data[key] = ""
         # Read-only helper for the config dialog's mirror picker.
         data["download_mirrors"] = list(GITHUB_MIRRORS)
         return json_response(data)
@@ -473,20 +514,27 @@ class SnowLumaGoPlugin(Star):
             return error_response("请求体必须是 JSON 对象")
 
         for key, default in DEFAULT_CONFIG.items():
-            if key in ("webui_password", "onboarding_done"):
+            if key in SECRET_KEYS or key == "onboarding_done":
                 continue
             if key in payload and payload[key] is not None:
                 self.config[key] = _coerce(key, payload[key], default)
                 self._overrides.add(key)
 
-        password = payload.get("webui_password")
-        if isinstance(password, str) and password.strip():
-            self.config["webui_password"] = encrypt_secret(password.strip())
-            self._overrides.add("webui_password")
-            self.manager._load_password()
-            self.manager.auth_ok = False
-            if self.manager.api is not None:
-                self.manager.api.token = ""
+        for key in SECRET_KEYS:
+            value = payload.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            self.config[key] = encrypt_secret(value.strip())
+            self._overrides.add(key)
+            if key == "webui_password":
+                self.manager._load_password()
+                self.manager.auth_ok = False
+                if self.manager.api is not None:
+                    self.manager.api.token = ""
+            elif key == "vnc_password":
+                self.manager.qq.stop_vnc()
+        if "vnc_port" in payload:
+            self.manager.qq.stop_vnc()
 
         self.manager._installed_version = ""
         self._save_config(self.config)
@@ -541,7 +589,7 @@ class SnowLumaGoPlugin(Star):
         # That keeps both entry points usable instead of silently freezing the
         # first-seen values forever.
         for key, default in DEFAULT_CONFIG.items():
-            if key == "webui_password":
+            if key in SECRET_KEYS:
                 continue
             if key in self._overrides and persisted.get(key) is not None:
                 config[key] = _coerce(key, persisted[key], default)
@@ -550,13 +598,10 @@ class SnowLumaGoPlugin(Star):
             else:
                 config[key] = default
 
-        stored = str(
-            persisted.get("webui_password")
-            or object_values.get("webui_password")
-            or ""
-        )
-        plain = decrypt_secret(stored) if stored else ""
-        config["webui_password"] = encrypt_secret(plain) if plain else ""
+        for key in SECRET_KEYS:
+            stored = str(persisted.get(key) or object_values.get(key) or "")
+            plain = decrypt_secret(stored) if stored else ""
+            config[key] = encrypt_secret(plain) if plain else ""
 
         self._persist(config)
         return config
@@ -568,10 +613,11 @@ class SnowLumaGoPlugin(Star):
             "__overrides__": sorted(self._overrides),
         }
         for key in self._overrides:
-            if key in DEFAULT_CONFIG and key != "webui_password":
+            if key in DEFAULT_CONFIG and key not in SECRET_KEYS:
                 data[key] = cfg.get(key, DEFAULT_CONFIG[key])
-        if cfg.get("webui_password"):
-            data["webui_password"] = cfg["webui_password"]
+        for key in SECRET_KEYS:
+            if cfg.get(key):
+                data[key] = cfg[key]
         if cfg.get("onboarding_done"):
             data["onboarding_done"] = True
         write_json(self.config_path, data)
@@ -590,7 +636,7 @@ class SnowLumaGoPlugin(Star):
     # ------------------------------------------------------------------ #
 
     async def terminate(self):
-        for task in (self._auto_start_task, self._post_install_task):
+        for task in (self._auto_start_task, self._post_install_task, self._linux_deps_task):
             if task and not task.done():
                 task.cancel()
                 try:
@@ -605,3 +651,7 @@ class SnowLumaGoPlugin(Star):
                 await self.manager.cleanup()
             except Exception:
                 pass
+        try:
+            self.manager.qq.shutdown_display()
+        except Exception:
+            pass

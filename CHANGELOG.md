@@ -17,6 +17,9 @@
 - SnowLuma 启动增加互斥锁，避免自动启动、安装后启动和手动点击同时拉起多个进程
 - 配置区新增「清理 QQ 进程」：结束当前系统用户运行的 QQ 主进程和 Electron 子进程；其他用户的进程会提示需要 sudo
 - 新增「Linux QQ DISPLAY」配置，配合 Xvfb / VNC 让无桌面 Ubuntu 服务器也能看到 QQ 二维码并完成登录；README 增加操作步骤
+- 新增 WebUI「QQ 登录」弹窗：自动启动 Xvfb / x11vnc 并截取 QQ 登录二维码，可直接在浏览器里扫码
+- 新增加密保存的 sudo 密码，以及「修复 QQ 权限」「安装 Linux 依赖」按钮（chown / ptrace_scope / apt）
+- 清理 QQ 进程支持通过 sudo 结束其他系统用户启动的旧 QQ
 
 ## 1.0.0
 

@@ -125,6 +125,7 @@
 
                 <div class="aux-buttons">
                     <button class="btn" id="btn-qq-launch">启动 QQ</button>
+                    <button class="btn" id="btn-qq-login">QQ 登录</button>
                     <button class="btn" id="btn-hook-all">全部挂载</button>
                     <button class="btn" id="btn-restart">重启</button>
                     <button class="btn" id="btn-refresh">刷新状态</button>
@@ -243,9 +244,19 @@
                 </div>
                 <div class="form-group">
                     <label>Linux QQ DISPLAY（可选）</label>
-                    <input type="text" id="cfg-qq_display" placeholder="例如 :99，配合 Xvfb / VNC 使用">
+                    <input type="text" id="cfg-qq_display" placeholder="例如 :99；留空自动使用 :99">
                     <div class="form-hint">
-                        无桌面的 Ubuntu 服务器需要先启动 Xvfb + VNC，再填写对应 DISPLAY，才能看到 QQ 二维码并扫码登录。
+                        无桌面服务器会自动启动 Xvfb，并可在「QQ 登录」里直接查看二维码截图；VNC 是可选的备用方式。
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>VNC 端口 / 密码（可选）</label>
+                    <div style="display:flex;gap:8px;">
+                        <input type="number" id="cfg-vnc_port" placeholder="5900" style="width:130px;">
+                        <input type="password" id="cfg-vnc_password" placeholder="留空仅本机 VNC" style="flex:1;">
+                    </div>
+                    <div class="form-hint">
+                        留空密码时 x11vnc 只监听 127.0.0.1，可通过 SSH 隧道访问；填写密码后允许局域网连接。
                     </div>
                 </div>
                 <div class="form-group">
@@ -272,6 +283,13 @@
                         可在 SnowLuma 启动日志中搜索 <code>initial credentials</code> 找到初始密码。
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>sudo 密码（Linux 修复用）</label>
+                    <input type="password" id="cfg-sudo_password" placeholder="留空表示不修改" autocomplete="off">
+                    <div class="form-hint">
+                        仅用于 chown / sysctl / apt 等修复命令，加密保存，接口不会回显明文。
+                    </div>
+                </div>
             </div>
 
             <div class="form-section">
@@ -291,6 +309,8 @@
                     <button class="btn" id="btn-check-update">检查更新</button>
                     <button class="btn" id="btn-cleanup">清理残留</button>
                     <button class="btn btn-danger" id="btn-qq-cleanup">清理 QQ 进程</button>
+                    <button class="btn" id="btn-fix-linux">修复 QQ 权限</button>
+                    <button class="btn" id="btn-install-deps">安装 Linux 依赖</button>
                     <button class="btn" id="btn-replay-guide">使用引导</button>
                 </div>
                 <div class="form-hint">安装 / 更新、卸载在上方「版本与安装」中。</div>
@@ -333,6 +353,24 @@
             <div class="form-actions">
                 <button class="btn" id="btn-close-webui">关闭</button>
                 <a class="btn btn-primary" id="webui-open-link" target="_blank" rel="noopener noreferrer">在新页面打开</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="qq-login-modal">
+        <div class="modal-content wide">
+            <h3>QQ 登录</h3>
+            <div class="mini-note" id="qq-login-hint" style="margin-bottom:10px;">
+                正在启动虚拟显示并截取 QQ 登录二维码...
+            </div>
+            <div class="qq-qr-wrap">
+                <img id="qq-qr-image" alt="QQ 登录二维码">
+            </div>
+            <div class="qq-vnc-line" id="qq-vnc-info"></div>
+            <div class="form-actions">
+                <button class="btn" id="btn-qq-login-refresh" type="button">刷新二维码</button>
+                <button class="btn" id="btn-copy-qq-vnc" type="button">复制 VNC 地址</button>
+                <button class="btn" id="btn-close-qq-login" type="button">关闭</button>
             </div>
         </div>
     </div>

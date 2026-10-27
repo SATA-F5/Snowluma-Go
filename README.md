@@ -14,25 +14,27 @@ SnowLuma Go 是一个把 [SnowLuma](https://github.com/SnowLuma/SnowLuma) 一键
 
 ## Ubuntu 无桌面服务器登录 QQ
 
-QQNT 需要图形界面才能显示二维码。无桌面的 Ubuntu 服务器建议用 Xvfb + VNC：
+插件会在无桌面环境自动启动 Xvfb，并允许直接在 WebUI 的「QQ 登录」弹窗里截取二维码，不强制需要 VNC 客户端。
 
-```bash
-sudo apt update
-sudo apt install -y xvfb x11vnc openbox
+推荐流程：
 
-# 用运行 AstrBot 的同一个用户执行
-Xvfb :99 -screen 0 1280x800x24 &
-DISPLAY=:99 openbox &
-x11vnc -display :99 -forever -shared -rfbport 5900 -passwd '替换成你的VNC密码'
-```
+1. 在配置里填写「sudo 密码」（加密保存，仅用于 Linux 修复命令）
+2. 点「配置 → 维护与帮助 → 安装 Linux 依赖」，安装 `xvfb x11vnc openbox scrot`
+3. 点「修复 QQ 权限」，自动修正 `~/.config/QQ` 属主并设置 `kernel.yama.ptrace_scope=0`
+4. 点「清理 QQ 进程」，再点「启动 QQ」
+5. 点「QQ 登录」，在弹出的窗口里直接查看二维码并扫码
 
-然后在插件配置里把「Linux QQ DISPLAY」填为 `:99`，保存后用 VNC 客户端连接 `服务器IP:5900`，再在面板点「启动 QQ」，即可在 VNC 里扫码登录。
+如果需要 VNC：
+
+- 配置「VNC 端口」默认 `5900`
+- 「VNC 密码」留空时 x11vnc 只监听 `127.0.0.1`，可通过 SSH 隧道访问
+- 填写密码后允许局域网 VNC 连接；公网暴露有风险，建议只在内网使用
 
 注意：
 
 - AstrBot、SnowLuma、QQ 必须使用同一个系统用户运行，不要用 root 启动 QQ
+- 如果 QQ 之前用 root 启动过，配置 sudo 密码后「清理 QQ 进程」会尝试通过 sudo 结束它
 - 如果 QQ 之前用 root 启动过，先停止旧进程，并修正 `~/.config/QQ` 的属主
-- VNC 暴露到公网有风险，建议只在内网使用或通过 SSH 隧道连接
 
 ## 所需环境
 

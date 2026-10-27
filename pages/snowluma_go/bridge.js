@@ -29,6 +29,7 @@
         revealedPassword: "",
         onboarding: { steps: [], idx: 0 },
         context: {},
+        qqVncAddress: "",
     };
 
     // ------------------------------------------------------------------
@@ -75,13 +76,13 @@
             } catch (error) { /* iframe detached */ }
         }
 
-        function request(action, payload) {
+        function request(action, payload, timeoutMs) {
             return new Promise((resolve, reject) => {
                 const requestId = "slgo_" + (++seq);
                 const timer = setTimeout(() => {
                     pending.delete(requestId);
                     reject(new Error("请求超时：仪表盘没有响应"));
-                }, 15000);
+                }, timeoutMs || 15000);
                 pending.set(requestId, {
                     resolve: (value) => { clearTimeout(timer); resolve(value); },
                     reject: (error) => { clearTimeout(timer); reject(error); },
@@ -98,7 +99,7 @@
             ready: () => ready,
             getContext: () => context,
             apiGet: (endpoint, params) => request("api:get", { endpoint, params }),
-            apiPost: (endpoint, body) => request("api:post", { endpoint, body }),
+            apiPost: (endpoint, body, timeoutMs) => request("api:post", { endpoint, body }, timeoutMs),
             onContext: (handler) => { if (typeof handler === "function" && context) handler(context); },
         };
     }
@@ -116,7 +117,7 @@
     }
 
     const apiGet = (endpoint, params) => S.bridge.apiGet(endpoint, params);
-    const apiPost = (endpoint, body) => S.bridge.apiPost(endpoint, body || {});
+    const apiPost = (endpoint, body, timeoutMs) => S.bridge.apiPost(endpoint, body || {}, timeoutMs);
 
     // ------------------------------------------------------------------
     // Helpers
@@ -476,6 +477,9 @@
         $("btn-qq-cleanup").disabled = S.busy.has("qq-cleanup");
         $("btn-install").disabled = isDownloading(status);
         $("btn-open-webui").disabled = !(running && status.webui_url);
+        $("btn-qq-login").disabled = !(status.qq && status.qq.installed) || S.busy.has("qq-qr");
+        $("btn-fix-linux").disabled = S.busy.has("linux-fix");
+        $("btn-install-deps").disabled = S.busy.has("linux-deps");
     }
 
     // ------------------------------------------------------------------
@@ -548,7 +552,8 @@
             ["s-password", "WebUI 密码", "自动生成并加密保存的密码，可以显示、复制或重置。"],
             ["s-install-dir", "安装目录", "本插件托管的 SnowLuma 程序目录；config/、data/ 等用户数据会保留。"],
             ["s-astrbot-path", "AstrBot 配置", "插件探测到的 AstrBot cmd_config.json 路径。"],
-            ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会尝试使用 Xvfb。"],
+            ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会在 Xvfb 虚拟显示中启动。"],
+            ["btn-qq-login", "QQ 登录", "无桌面服务器可直接在这里查看 QQ 登录二维码并扫码。"],
             ["btn-hook-all", "全部挂载", "让 SnowLuma 挂载所有可用的 QQ 进程。"],
             ["btn-open-config", "配置", "安装、更新或卸载 SnowLuma，修改下载镜像与自动化选项。"],
             ["log-container", "实时日志", "插件与 SnowLuma 的运行日志，出错时先看这里。"],
@@ -878,8 +883,8 @@
 
     async function actionCleanupQQ() {
         if (!(await confirmDialog(
-            "将强制结束当前系统用户运行的 QQ 进程（包括正在登录的 QQ）。" +
-            "其他用户启动的 QQ 需要 sudo 手动结束。继续？",
+            "将强制结束 QQ 进程（包括正在登录的 QQ）。" +
+            "如果配置了 sudo 密码，也会结束其他用户启动的 QQ。继续？",
             "清理 QQ"
         ))) return;
         const result = await run("qq-cleanup", () => apiPost("qq/cleanup"));
@@ -888,6 +893,77 @@
                 result.ok ? "ok" : "err", 6000);
         }
         refreshStatus();
+    }
+
+    async function refreshQQLogin() {
+        const image = $("qq-qr-image");
+        const hint = $("qq-login-hint");
+        const vnc = $("qq-vnc-info");
+        S.qqVncAddress = "";
+        image.classList.remove("visible");
+        image.removeAttribute("src");
+        hint.textContent = "正在启动虚拟显示并截取 QQ 登录二维码，首次可能需要几秒；空白时请稍后点刷新。";
+        vnc.textContent = "";
+        const result = await run("qq-qr", () => apiPost("qq/login-qr", {}, 45000));
+        if (!result) return;
+        if (result.ok && result.image) {
+            image.src = result.image;
+            image.classList.add("visible");
+            hint.textContent = result.message || "扫描二维码登录 QQ";
+        } else {
+            hint.textContent = result.message || "未截取到二维码";
+        }
+        const info = result.vnc || {};
+        if (info.running) {
+            const host = window.location.hostname || "127.0.0.1";
+            if (info.local_only) {
+                S.qqVncAddress = "vnc://127.0.0.1:" + info.port;
+                vnc.textContent = "VNC 仅监听本机：" + S.qqVncAddress +
+                    "。远程可先建立 SSH 隧道：ssh -L " + info.port + ":127.0.0.1:" + info.port +
+                    " 用户名@" + host;
+            } else {
+                S.qqVncAddress = "vnc://" + host + ":" + info.port;
+                vnc.textContent = "VNC 地址：" + S.qqVncAddress +
+                    (info.display ? "（DISPLAY=" + info.display + "）" : "");
+            }
+        } else {
+            vnc.textContent = "VNC 未运行" + (info.display ? "（DISPLAY=" + info.display + "）" : "") +
+                "；二维码截图仍可直接使用。";
+        }
+    }
+
+    function openQQLoginModal() {
+        $("qq-login-modal").classList.add("visible");
+        refreshQQLogin();
+    }
+
+    async function actionCopyQQVnc() {
+        if (!S.qqVncAddress) {
+            toast("当前没有可用的 VNC 地址", "warn", 3000);
+            return;
+        }
+        await copyText(S.qqVncAddress, "VNC 地址已复制");
+    }
+
+    async function actionFixLinux() {
+        if (!(await confirmDialog(
+            "将使用 sudo 修正 ~/.config/QQ 的所有者与权限，并把 kernel.yama.ptrace_scope 设为 0。继续？",
+            "修复权限"
+        ))) return;
+        const result = await run("linux-fix", () => apiPost("linux/fix-permissions", {}, 60000));
+        if (result) toast(result.message || (result.ok ? "修复完成" : "修复失败"),
+            result.ok ? "ok" : "err", 8000);
+        refreshStatus();
+    }
+
+    async function actionInstallDeps() {
+        if (!(await confirmDialog(
+            "将使用 sudo apt-get 安装 xvfb、x11vnc、openbox、scrot，可能需要几分钟。继续？",
+            "安装依赖"
+        ))) return;
+        const result = await run("linux-deps", () => apiPost("linux/install-deps"));
+        if (result) toast(result.message || (result.ok ? "安装完成" : "安装失败"),
+            result.ok ? "ok" : "err", 8000);
     }
 
     async function actionCheckUpdate() {
@@ -1097,6 +1173,7 @@
         ["qq_number", "value"],
         ["qq_path", "value"],
         ["qq_display", "value"],
+        ["vnc_port", "number"],
         ["astrbot_config_path", "value"],
         ["ws_host_override", "value"],
         ["sync_connection_name", "value"],
@@ -1156,6 +1233,8 @@
             });
             $("cfg-webui_password").value = "";
             $("cfg-webui_password").type = "password";
+            $("cfg-sudo_password").value = "";
+            $("cfg-vnc_password").value = "";
             S.mirrors = Array.isArray(config.download_mirrors) ? config.download_mirrors.slice() : [];
             renderMirrorMenu();
             setMirrorMenu(false);
@@ -1193,6 +1272,10 @@
         });
         const password = $("cfg-webui_password").value.trim();
         if (password) payload.webui_password = password;
+        const sudoPassword = $("cfg-sudo_password").value.trim();
+        if (sudoPassword) payload.sudo_password = sudoPassword;
+        const vncPassword = $("cfg-vnc_password").value.trim();
+        if (vncPassword) payload.vnc_password = vncPassword;
 
         const result = await run("config-save", () => apiPost("config/save", payload));
         if (!result) return;
@@ -1240,6 +1323,12 @@
         $("btn-refresh").addEventListener("click", () => { refreshStatus(); toast("已刷新", "ok", 1200); });
         $("btn-check-update").addEventListener("click", actionCheckUpdate);
         $("btn-qq-cleanup").addEventListener("click", actionCleanupQQ);
+        $("btn-qq-login").addEventListener("click", openQQLoginModal);
+        $("btn-fix-linux").addEventListener("click", actionFixLinux);
+        $("btn-install-deps").addEventListener("click", actionInstallDeps);
+        $("btn-qq-login-refresh").addEventListener("click", refreshQQLogin);
+        $("btn-copy-qq-vnc").addEventListener("click", actionCopyQQVnc);
+        $("btn-close-qq-login").addEventListener("click", () => $("qq-login-modal").classList.remove("visible"));
         $("btn-replay-guide").addEventListener("click", () => {
             closeConfig();
             startOnboarding();
