@@ -582,6 +582,11 @@
             card.style.width = "";
         } else {
             ob.classList.remove("with-backdrop");
+            // Position synchronously first: requestAnimationFrame is throttled
+            // or paused in background tabs / embedded iframes, which used to
+            // leave most tour steps without a spotlight. A second pass on the
+            // next frame keeps the ring aligned after scrolling / layout shifts.
+            positionOnboarding();
             requestAnimationFrame(positionOnboarding);
         }
     }
