@@ -55,6 +55,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_start_qq": False,
     "deploy_mode": "auto",
     "snowluma_port": DEFAULT_SNOWLUMA_PORT,
+    "webui_bind_host": "0.0.0.0",
     "snowluma_version": DEFAULT_SNOWLUMA_VERSION,
     "release_flavor": DEFAULT_RELEASE_FLAVOR,
     "download_mirror": DEFAULT_DOWNLOAD_MIRROR,

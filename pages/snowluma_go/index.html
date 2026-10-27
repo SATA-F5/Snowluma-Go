@@ -174,6 +174,16 @@
                     <input type="number" id="cfg-snowluma_port" min="1" max="65535" placeholder="5099">
                 </div>
                 <div class="form-group">
+                    <label>WebUI 监听地址</label>
+                    <select id="cfg-webui_bind_host">
+                        <option value="0.0.0.0">0.0.0.0（允许局域网 / 远程访问）</option>
+                        <option value="127.0.0.1">127.0.0.1（仅本机访问）</option>
+                    </select>
+                    <div class="form-hint">
+                        远程打开 WebUI 需要监听 0.0.0.0，保存后重启 SnowLuma 生效。
+                    </div>
+                </div>
+                <div class="form-group">
                     <label>external 主机 / 端口</label>
                     <div style="display:flex;gap:8px;">
                         <input type="text" id="cfg-external_host" placeholder="127.0.0.1" style="flex:1;">
@@ -286,7 +296,7 @@
     <div class="modal" id="webui-modal">
         <div class="modal-content wide">
             <h3>打开 SnowLuma WebUI</h3>
-            <div class="mini-note" style="margin-bottom:12px;">
+            <div class="mini-note" id="webui-ip-hint" style="margin-bottom:12px;">
                 地址已按当前访问的 IP 自动适配；远程访问 AstrBot 时不会再指向 127.0.0.1。
             </div>
 

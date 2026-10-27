@@ -8,6 +8,7 @@
     const CHANNEL = "astrbot-plugin-page";
     const ONBOARD_KEY = "snowluma_go_onboarded_v1";
     const LOCAL_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0", "[::]", "::"];
+    const LOOPBACK_BIND_HOSTS = ["127.0.0.1", "localhost", "::1", "[::1]"];
     const STATUS_INTERVAL = 3000;
     const FAST_INTERVAL = 900;
     const LOG_INTERVAL = 2500;
@@ -144,7 +145,15 @@
     }
 
     function currentWebUIUrl() {
-        return rewriteUrlForCurrentHost((S.status && S.status.webui_url) || "");
+        const status = S.status || {};
+        const raw = status.webui_url || "";
+        if (!raw) return "";
+        const bindHost = String(status.webui_bind_host || "").trim();
+        // If the user explicitly keeps SnowLuma on loopback, don't advertise a
+        // remote URL that cannot work. 0.0.0.0 means all interfaces, so it is
+        // *not* local-only even though it appears in LOCAL_HOSTS.
+        if (LOOPBACK_BIND_HOSTS.includes(bindHost)) return raw;
+        return rewriteUrlForCurrentHost(raw);
     }
 
     function toast(message, kind, duration) {
@@ -895,6 +904,11 @@
         const url = currentWebUIUrl();
         $("webui-url-field").value = url;
         $("webui-open-link").href = url;
+        const bindHost = String(status.webui_bind_host || "").trim();
+        const localOnly = LOOPBACK_BIND_HOSTS.includes(bindHost);
+        $("webui-ip-hint").textContent = localOnly
+            ? "当前 WebUI 仅监听本机（127.0.0.1），其他设备无法访问；可在配置里把监听地址改为 0.0.0.0。"
+            : "地址已按当前访问的 IP 自动适配；远程访问 AstrBot 时不会再指向 127.0.0.1。";
 
         const passwordField = $("webui-password-field");
         passwordField.value = S.revealedPassword || "";
@@ -1059,6 +1073,7 @@
     const CONFIG_FIELDS = [
         ["deploy_mode", "value"],
         ["snowluma_port", "number"],
+        ["webui_bind_host", "value"],
         ["external_host", "value"],
         ["external_port", "number"],
         ["snowluma_version", "value"],

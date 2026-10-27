@@ -475,11 +475,19 @@ class SnowLumaManager(SnowLumaDownloadMixin):
     # Start / stop
     # ------------------------------------------------------------------ #
 
+    @property
+    def webui_bind_host(self) -> str:
+        host = str(self.plugin.config.get("webui_bind_host", "0.0.0.0") or "0.0.0.0").strip()
+        return host or "0.0.0.0"
+
     def _spawn_env(self) -> Dict[str, str]:
         env = os.environ.copy()
         port = int(self.plugin.config.get("snowluma_port", DEFAULT_SNOWLUMA_PORT) or DEFAULT_SNOWLUMA_PORT)
         env["SNOWLUMA_WEBUI_PORT"] = str(port)
-        env["SNOWLUMA_WEBUI_HOST"] = "127.0.0.1"
+        # Bind outside loopback by default so opening the WebUI from another
+        # machine (AstrBot dashboard at 192.168.x.x) actually works; the
+        # backend itself still talks to 127.0.0.1.
+        env["SNOWLUMA_WEBUI_HOST"] = self.webui_bind_host
         env["SNOWLUMA_HOOK_AUTOLOAD"] = "1" if bool(self.plugin.config.get("auto_hook", True)) else "0"
         webui_json = self.config_dir / "webui.json"
         if not webui_json.exists() and self.password:
@@ -994,6 +1002,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             "running": self.is_running_check(),
             "pid": self.process.pid if self.process is not None and self.process.returncode is None else None,
             "webui_url": self.webui_url,
+            "webui_bind_host": self.webui_bind_host,
             "webui_port": int(self.plugin.config.get("external_port", self.webui_port))
             if self.deploy_mode == "external"
             else self.webui_port,

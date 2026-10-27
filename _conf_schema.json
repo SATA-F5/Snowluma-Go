@@ -35,6 +35,12 @@
         "default": 5099,
         "hint": "本机模式使用。插件启动 SnowLuma 时会通过 SNOWLUMA_WEBUI_PORT 注入该端口；若端口被占用 SnowLuma 会自动顺延，插件会从日志里读回真实端口。"
     },
+    "webui_bind_host": {
+        "type": "string",
+        "description": "SnowLuma WebUI 监听地址",
+        "default": "0.0.0.0",
+        "hint": "默认 0.0.0.0，允许从局域网 / 其他设备打开 WebUI，地址会自动替换为当前访问 AstrBot 的主机名；填 127.0.0.1 则仅本机可访问。修改后需重启 SnowLuma 生效。"
+    },
     "snowluma_version": {
         "type": "string",
         "description": "默认安装版本",
