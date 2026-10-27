@@ -68,6 +68,102 @@ a { color: var(--primary-light); }
 
 .form-section .aux-buttons { margin-top: 6px; }
 
+.mirror-picker { position: relative; }
+.mirror-picker input { padding-right: 42px; }
+.mirror-toggle {
+    position: absolute;
+    top: 50%;
+    right: 5px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s, transform 0.15s;
+    transform: translateY(-50%);
+}
+.mirror-toggle:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+}
+.mirror-picker.open .mirror-toggle {
+    color: var(--primary-light);
+    transform: translateY(-50%) rotate(180deg);
+}
+.mirror-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 40;
+    display: none;
+    max-height: 238px;
+    padding: 5px;
+    overflow-y: auto;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: #1b1b29;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+.mirror-menu.visible { display: block; }
+.mirror-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'Consolas', monospace;
+    font-size: 10.5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.mirror-option + .mirror-option { margin-top: 1px; }
+.mirror-option:hover,
+.mirror-option:focus-visible {
+    background: rgba(0, 174, 236, 0.14);
+    color: var(--text);
+    outline: none;
+}
+.mirror-option.selected {
+    color: var(--primary-light);
+    background: rgba(0, 174, 236, 0.1);
+}
+.mirror-url {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.mirror-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.mirror-tag {
+    padding: 1px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    font-size: 9px;
+    color: var(--text-muted);
+}
+.mirror-check {
+    color: var(--success);
+    font-size: 11px;
+}
+
 .switch-line {
     display: flex;
     align-items: center;

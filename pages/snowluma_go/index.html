@@ -209,11 +209,17 @@
                 </div>
                 <div class="form-group">
                     <label>GitHub 下载镜像（可选）</label>
-                    <input type="text" id="cfg-download_mirror" placeholder="https://gh.zwy.one/" list="cfg-download-mirror-presets">
-                    <datalist id="cfg-download-mirror-presets"></datalist>
+                    <div class="mirror-picker" id="cfg-mirror-picker">
+                        <input type="text" id="cfg-download_mirror" placeholder="https://gh.zwy.one/" autocomplete="off" spellcheck="false">
+                        <button class="mirror-toggle" type="button" id="cfg-mirror-toggle" aria-label="选择下载镜像" aria-expanded="false">
+                            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </button>
+                        <div class="mirror-menu" id="cfg-mirror-menu" role="listbox" aria-label="下载镜像列表"></div>
+                    </div>
                     <div class="form-hint">
-                        先尝试这里填写的镜像，再按 NapCat_Go 的镜像顺序自动回退，最后回退 GitHub 官方源。
-                        留空则直接使用内置镜像列表。
+                        可直接输入自定义前缀，或点击右侧箭头选择内置镜像；下载失败时仍会按 NapCat_Go 的镜像顺序自动回退。
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">

@@ -16,6 +16,7 @@
         bridge: null,
         status: null,
         releases: [],
+        mirrors: [],
         logs: [],
         logOffset: 0,
         logSource: "process",
@@ -396,7 +397,7 @@
                 '<button class="btn btn-sm btn-primary" data-action="accept-agreements">我同意</button></div>');
         } else if (!status.installed) {
             kind = "warn";
-            parts.push("<strong>尚未安装 SnowLuma</strong><br>点击「安装 / 更新」选择 full 发行包即可自动下载并部署。");
+            parts.push("<strong>尚未安装 SnowLuma</strong><br>打开「配置」→「版本与安装」，点「安装 / 更新」选择 full 发行包即可自动下载并部署。");
         } else if (status.last_error) {
             kind = "error";
             parts.push("<strong>最近错误</strong><br>" + esc(shorten(status.last_error, 300)));
@@ -994,6 +995,42 @@
         ["auto_accept_agreements", "check"],
     ];
 
+    function renderMirrorMenu() {
+        const menu = $("cfg-mirror-menu");
+        const input = $("cfg-download_mirror");
+        if (!menu || !input) return;
+        const current = input.value.trim();
+        const options = [{ value: "", label: "官方 GitHub（不使用镜像）", tag: "官方" }];
+        S.mirrors.forEach((mirror, index) => {
+            options.push({ value: mirror, label: mirror, tag: index === 0 ? "默认" : "" });
+        });
+        menu.innerHTML = options.map((option) => {
+            const selected = option.value === current;
+            const meta = [option.tag ? '<span class="mirror-tag">' + esc(option.tag) + "</span>" : ""]
+                .concat(selected ? ['<span class="mirror-check">✓</span>'] : [])
+                .join("");
+            return '<button class="mirror-option' + (selected ? " selected" : "") + '" type="button" role="option"' +
+                ' aria-selected="' + (selected ? "true" : "false") + '"' +
+                ' data-mirror="' + esc(option.value) + '">' +
+                '<span class="mirror-url">' + esc(option.label) + "</span>" +
+                (meta ? '<span class="mirror-meta">' + meta + "</span>" : "") +
+                "</button>";
+        }).join("");
+    }
+
+    function setMirrorMenu(open) {
+        const picker = $("cfg-mirror-picker");
+        const menu = $("cfg-mirror-menu");
+        const toggle = $("cfg-mirror-toggle");
+        if (!picker || !menu || !toggle) return;
+        picker.classList.toggle("open", open);
+        menu.classList.toggle("visible", open);
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        if (!open) return;
+        const selected = menu.querySelector(".mirror-option.selected");
+        if (selected) selected.scrollIntoView({ block: "nearest" });
+    }
+
     async function openConfig(scrollToInstall) {
         try {
             const config = await apiGet("config");
@@ -1006,11 +1043,9 @@
             });
             $("cfg-webui_password").value = "";
             $("cfg-webui_password").type = "password";
-            const presets = $("cfg-download-mirror-presets");
-            const mirrors = Array.isArray(config.download_mirrors) ? config.download_mirrors : [];
-            presets.innerHTML = mirrors
-                .map((mirror) => '<option value="' + esc(mirror) + '"></option>')
-                .join("");
+            S.mirrors = Array.isArray(config.download_mirrors) ? config.download_mirrors.slice() : [];
+            renderMirrorMenu();
+            setMirrorMenu(false);
             $("config-modal").classList.add("visible");
             if (!S.releases.length) await loadReleases(false);
             if (S.status) {
@@ -1030,6 +1065,7 @@
     }
 
     function closeConfig() {
+        setMirrorMenu(false);
         $("config-modal").classList.remove("visible");
     }
 
@@ -1095,6 +1131,30 @@
             startOnboarding();
         });
         $("btn-open-config").addEventListener("click", () => openConfig(false));
+        $("cfg-mirror-toggle").addEventListener("click", () => {
+            setMirrorMenu(!$("cfg-mirror-menu").classList.contains("visible"));
+        });
+        $("cfg-download_mirror").addEventListener("focus", () => setMirrorMenu(true));
+        $("cfg-download_mirror").addEventListener("input", renderMirrorMenu);
+        $("cfg-download_mirror").addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                setMirrorMenu(false);
+                $("cfg-download_mirror").blur();
+            } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setMirrorMenu(true);
+            }
+        });
+        $("cfg-mirror-menu").addEventListener("click", (event) => {
+            const option = event.target.closest(".mirror-option");
+            if (!option) return;
+            $("cfg-download_mirror").value = option.dataset.mirror || "";
+            renderMirrorMenu();
+            setMirrorMenu(false);
+        });
+        document.addEventListener("click", (event) => {
+            if (!event.target.closest("#cfg-mirror-picker")) setMirrorMenu(false);
+        });
         $("btn-config-cancel").addEventListener("click", closeConfig);
         $("btn-config-save").addEventListener("click", saveConfig);
         $("btn-reveal-password").addEventListener("click", revealPassword);
