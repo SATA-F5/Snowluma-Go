@@ -914,11 +914,13 @@
             image.src = result.image;
             image.classList.add("visible");
             hint.textContent = result.message || "扫描二维码登录 QQ";
+            if (result.detail) hint.textContent += "\n\n" + result.detail;
             if (result.loading && tries < 3) {
                 setTimeout(() => refreshQQLogin(tries + 1), 3000);
             }
         } else {
             hint.textContent = result.message || "未截取到二维码";
+            if (result.detail) hint.textContent += "\n\n" + result.detail;
         }
         const info = result.vnc || {};
         if (info.running) {

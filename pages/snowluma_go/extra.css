@@ -86,6 +86,12 @@ a { color: var(--primary-light); }
     border-radius: 8px;
 }
 .qq-qr-wrap img.visible { display: block; }
+#qq-login-hint {
+    white-space: pre-wrap;
+    max-height: 150px;
+    overflow: auto;
+    word-break: break-word;
+}
 .qq-vnc-line {
     margin-top: 10px;
     font-size: 10.5px;

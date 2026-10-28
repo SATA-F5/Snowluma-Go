@@ -15,6 +15,7 @@ import asyncio
 import base64
 import os
 import platform
+import re
 import shutil
 import subprocess
 import time
@@ -287,6 +288,7 @@ class QQManager:
         self._vnc_local_only = True
         self._display = ""
         self._wm_name = ""
+        self._qq_proc: Optional[subprocess.Popen] = None
 
     # ---------------- detection ----------------
 
@@ -770,6 +772,50 @@ class QQManager:
         except Exception:
             return None
 
+    def _qq_log_tail(self, limit: int = 400) -> str:
+        return self._tail_log(self.manager.persistent_dir / "qq.log", limit)
+
+    def _diagnose_display(self, display: str) -> str:
+        """Compact diagnostics shown when QQ never maps a window."""
+        lines: List[str] = []
+        xwininfo = find_binary("xwininfo")
+        if xwininfo:
+            try:
+                result = subprocess.run(
+                    [xwininfo, "-display", display, "-root", "-tree"],
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                )
+                tree = (result.stdout or result.stderr or "").strip()
+                lines.append("xwininfo: " + (shorten(tree, 700) or "无输出"))
+            except Exception as exc:
+                lines.append(f"xwininfo 失败: {shorten(str(exc), 120)}")
+        pids = sorted(running_qq_main_pids())
+        lines.append("QQ 主进程: " + (", ".join(str(pid) for pid in pids) or "无"))
+        for pid in pids[:2]:
+            try:
+                cmdline = (
+                    Path(f"/proc/{pid}/cmdline")
+                    .read_bytes()
+                    .replace(b"\x00", b" ")
+                    .decode("utf-8", errors="ignore")
+                    .strip()
+                )
+                lines.append(f"PID {pid}: {shorten(cmdline, 220)}")
+                raw = Path(f"/proc/{pid}/environ").read_bytes()
+                for item in raw.split(b"\x00"):
+                    if item.startswith(
+                        (b"DISPLAY=", b"QT_QPA_PLATFORM=", b"WAYLAND_DISPLAY=")
+                    ):
+                        lines.append("  " + item.decode("utf-8", errors="ignore"))
+            except Exception as exc:
+                lines.append(f"PID {pid}: 无法读取 ({shorten(str(exc), 80)})")
+        tail = self._qq_log_tail(700)
+        if tail:
+            lines.append("qq.log: " + tail)
+        return "\n".join(lines)
+
     def _display_has_qq_window(self, display: str) -> bool:
         """Best-effort check that QQ actually mapped a window on this display."""
         xwininfo = find_binary("xwininfo")
@@ -786,15 +832,27 @@ class QQManager:
                 text=True,
                 timeout=5,
             )
-            tree = (result.stdout or "").lower()
-            found = "qq" in tree or "登录" in tree
-            if not found:
-                self.manager._log(
-                    f"[qq] [warn] {display} 没有 QQ 窗口；当前窗口树: "
-                    f"{shorten((result.stdout or '').strip(), 500)}",
-                    "warning",
-                )
-            return found
+            tree = result.stdout or ""
+            window_line = ""
+            for line in tree.splitlines():
+                lowered = line.lower()
+                if "qq" not in lowered and "登录" not in lowered:
+                    continue
+                match = re.search(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", line)
+                if not match:
+                    continue
+                width, height = int(match.group(1)), int(match.group(2))
+                if width >= 120 and height >= 120:
+                    window_line = line.strip()
+                    break
+            if window_line:
+                return True
+            self.manager._log(
+                f"[qq] [warn] {display} 没有可见的 QQ 窗口；当前窗口树: "
+                f"{shorten(tree.strip(), 500)}",
+                "warning",
+            )
+            return False
         except Exception:
             return True
 
@@ -875,6 +933,7 @@ class QQManager:
                     "当前虚拟显示里还没有 QQ 窗口（QQ 可能运行在别的 DISPLAY）。"
                     "请先点「清理 QQ 进程」，再点「启动 QQ」，等登录窗口出现后刷新。"
                 ),
+                "detail": await asyncio.to_thread(self._diagnose_display, display),
                 "display": display,
                 "vnc": await self.vnc_info(),
             }
@@ -923,7 +982,7 @@ class QQManager:
             }
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
         still_loading = white_ratio is not None and white_ratio < 0.18
-        return {
+        result = {
             "ok": True,
             "image": "data:image/png;base64," + encoded,
             "display": display,
@@ -935,6 +994,9 @@ class QQManager:
                 else "已截取当前虚拟屏幕"
             ),
         }
+        if still_loading:
+            result["detail"] = await asyncio.to_thread(self._diagnose_display, display)
+        return result
 
     def stop_vnc(self) -> None:
         if self._vnc_proc is not None and self._vnc_proc.poll() is None:
@@ -1110,27 +1172,43 @@ class QQManager:
                     }
                 # QQNT/Electron on Xvfb often creates the process but never
                 # maps a window unless the Chromium sandbox/GPU paths used by
-                # the official Linux launcher are disabled.
+                # the official Linux launcher are disabled. Output goes to
+                # qq.log: without it a silent renderer failure is invisible.
                 cmd = [
                     exe,
                     "--no-sandbox",
                     "--disable-gpu",
-                    "--disable-software-rasterizer",
                     "--disable-gpu-compositing",
                     "--disable-dev-shm-usage",
                     "--ozone-platform=x11",
+                    "--enable-logging=stderr",
                 ]
-                subprocess.Popen(
-                    cmd,
-                    cwd=str(Path(exe).parent),
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                    env=launch_env,
-                )
+                qq_log = self.manager.persistent_dir / "qq.log"
+                qq_log.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    if qq_log.exists() and qq_log.stat().st_size > 2 * 1024 * 1024:
+                        qq_log.write_bytes(b"")
+                except Exception:
+                    pass
+                with open(qq_log, "ab") as log:
+                    self._qq_proc = subprocess.Popen(
+                        cmd,
+                        cwd=str(Path(exe).parent),
+                        stdout=log,
+                        stderr=log,
+                        start_new_session=True,
+                        env=launch_env,
+                    )
             self.manager._log(f"[qq] 已启动 QQ: {exe}（DISPLAY={display}）")
             for _ in range(10):
                 await asyncio.sleep(1)
+                if self._qq_proc is not None and self._qq_proc.poll() is not None:
+                    self.manager._log(
+                        "[qq] [warn] QQ 启动后立即退出（code="
+                        f"{self._qq_proc.returncode}）: {self._qq_log_tail(600) or '无输出'}",
+                        "warning",
+                    )
+                    break
                 after_all = set(running_qq_pids())
                 new_main = {
                     pid for pid in after_all
@@ -1142,13 +1220,18 @@ class QQManager:
                     self.launched_pids.update(after_all - before_all)
                     self.manager._log(f"[qq] 检测到 QQ 主进程: {sorted(new_main)}")
                     if display:
-                        await asyncio.sleep(2)
-                        if await asyncio.to_thread(self._display_has_qq_window, display):
+                        window_ok = False
+                        for _ in range(8):
+                            await asyncio.sleep(1)
+                            if await asyncio.to_thread(self._display_has_qq_window, display):
+                                window_ok = True
+                                break
+                        if window_ok:
                             self.manager._log(f"[qq] {display} 已检测到 QQ 窗口，可以扫码登录")
                         else:
                             self.manager._log(
-                                "[qq] [warn] QQ 主进程已启动，但 "
-                                f"{display} 上仍未出现窗口；请查看 window-manager.log 与 xvfb.log",
+                                f"[qq] [warn] QQ 主进程已启动，但 {display} 上仍未出现窗口"
+                                f"；qq.log: {self._qq_log_tail(500) or '无输出'}",
                                 "warning",
                             )
                     return {"ok": True, "pids": sorted(new_main), "message": "QQ 已启动"}
@@ -1216,6 +1299,7 @@ class QQManager:
             except Exception:
                 continue
         self.launched_pids.clear()
+        self._qq_proc = None
         self.manager._log(f"[qq] 已关闭本插件启动的 QQ 进程: {targets}")
         return {"ok": True, "pids": targets, "message": "已关闭本插件启动的 QQ"}
 
@@ -1266,6 +1350,7 @@ class QQManager:
                 skipped.extend({"pid": pid, "uid": process_uid(pid)} for pid in foreign)
 
         self.launched_pids.clear()
+        self._qq_proc = None
         # Prevent the auto flow from immediately launching QQ again after a
         # deliberate cleanup; the manual start button still works.
         self.manager._qq_autostarted = True
