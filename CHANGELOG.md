@@ -50,6 +50,9 @@
 - 摘要改为只读取本次启动后新增的日志，并从第一处 `UnhandledPromiseRejection / Error` 开始截取，确保能看到真正的错误头而不是栈尾
 - 启动 QQ 时自动预加载系统 `libssh2`：QQ 自带 `libssh2.so.1` 与系统 `libcurl` 不匹配时（`undefined symbol: libssh2_session_set_read_timeout`）会导致登录窗口完全不创建
 - 诊断信息增加 libssh2 状态与 QQ 自带库路径；「修复 QQ 登录界面」在缺少系统 libssh2 时给出安装提示
+- 检测并修复被 NapCat 补丁接管的 QQ 启动入口（`resources/app/package.json` 的 `main` 被改成 `loadNapCat.js`）：NapCat 数据目录被删除后，该加载器会抛 `ERR_MODULE_NOT_FOUND`，QQ 因此完全不创建登录窗口
+- 「修复 QQ 登录界面」会通过 sudo 备份 `package.json` 并恢复原始入口，同时禁用 `loadNapCat.js`
+- 启动 QQ 时清除继承的 `NAPCAT_BOOTMAIN` 环境变量，诊断信息中显示当前 `main` 入口
 
 ## 1.0.0
 

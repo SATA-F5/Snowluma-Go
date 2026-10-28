@@ -981,8 +981,8 @@
 
     async function actionRepairQQ() {
         if (!(await confirmDialog(
-            "会先结束 QQ 进程，再把 ~/.config/QQ/versions 下的热更新版本改名备份，" +
-            "让 QQ 回退到安装包自带版本。QQ 登录界面空白 / 不显示时使用。继续？",
+            "会先结束 QQ 进程，再恢复被 NapCat 补丁改掉的 QQ 启动入口（package.json 的 main），" +
+            "并备份 ~/.config/QQ/versions 下的热更新版本。需要已配置 sudo 密码。继续？",
             "修复 QQ 登录界面"
         ))) return;
         const result = await run("qq-repair", () => apiPost("qq/repair-ui", {}, 60000));

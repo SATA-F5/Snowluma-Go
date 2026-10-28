@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import platform
 import re
@@ -176,6 +177,31 @@ def find_qq_bundled_libssh2() -> List[str]:
         except OSError:
             continue
     return found
+
+
+def find_qq_app_dir() -> Optional[Path]:
+    """Locate QQ's ``resources/app`` directory holding the Electron entry."""
+    if IS_WINDOWS:
+        return None
+    for root in (
+        "/opt/QQ/resources/app",
+        "/opt/qq/resources/app",
+        "/opt/napcat-qq/resources/app",
+    ):
+        candidate = Path(root)
+        if (candidate / "package.json").is_file():
+            return candidate
+    return None
+
+
+# Linux QQ's original Electron entry. NapCat-style installers replace it with
+# ./loadNapCat.js, which breaks QQ completely once NapCat's files are gone.
+QQ_DEFAULT_MAIN = "./application.asar/app_launcher/index.js"
+QQ_MAIN_FALLBACKS = (
+    "./app_launcher/index.js",
+    "./application.asar/index.js",
+    "./index.js",
+)
 
 
 def find_binary(name: str) -> Optional[str]:
@@ -930,6 +956,11 @@ class QQManager:
             + "；QQ 自带="
             + (", ".join(bundled) or "无")
         )
+        entry = self.qq_entry_state()
+        if entry.get("found"):
+            lines.append(f"QQ 启动入口(main): {entry.get('main') or '未知'}")
+            if entry.get("hijacked"):
+                lines.append("QQ 启动入口被 NapCat 补丁接管，请点「修复 QQ 登录界面」")
         return "\n".join(lines)
 
     def _display_has_qq_window(self, display: str, *, log_missing: bool = True) -> bool:
@@ -1029,6 +1060,110 @@ class QQManager:
         base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
         return Path(base) / "QQ" / "versions"
 
+    def qq_entry_state(self) -> Dict[str, Any]:
+        """Report whether QQ's Electron entry was hijacked by a NapCat loader."""
+        app_dir = find_qq_app_dir()
+        if app_dir is None:
+            return {"found": False}
+        pkg = app_dir / "package.json"
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8", errors="ignore"))
+        except Exception as exc:
+            return {"found": True, "app_dir": str(app_dir), "error": shorten(str(exc), 120)}
+        main = str(data.get("main") or "")
+        return {
+            "found": True,
+            "app_dir": str(app_dir),
+            "main": main,
+            "hijacked": "loadnapcat" in main.lower(),
+            "loader_exists": (app_dir / "loadNapCat.js").is_file(),
+        }
+
+    async def repair_qq_entry(self) -> Dict[str, Any]:
+        """Restore QQ's original ``main`` after a NapCat-style installer.
+
+        NapCat patches ``resources/app/package.json`` to run ``loadNapCat.js``,
+        which imports ``napcat/napcat.mjs`` from an absolute path. When the old
+        plugin data dir disappears, that import throws inside QQ's main process
+        and the login window is never created.
+        """
+        if IS_WINDOWS:
+            return {"ok": False, "message": "该修复仅适用于 Linux"}
+        state = self.qq_entry_state()
+        app_dir = state.get("app_dir")
+        if not state.get("found"):
+            return {"ok": False, "message": "未找到 /opt/QQ/resources/app/package.json"}
+        if state.get("error"):
+            return {"ok": False, "message": f"读取 package.json 失败: {state['error']}"}
+        if not state.get("hijacked"):
+            return {"ok": True, "already": True, "message": "QQ 启动入口正常，无需修复"}
+        if not sudo_password(self.manager.plugin):
+            return {
+                "ok": False,
+                "message": (
+                    "QQ 启动入口被 NapCat 补丁接管（main=loadNapCat.js），"
+                    "但 NapCat 文件已不存在。请在配置里填写 sudo 密码后重试，"
+                    "或手动执行：sudo cp /opt/QQ/resources/app/package.json "
+                    "/opt/QQ/resources/app/package.json.napcat-bak"
+                ),
+            }
+        base = Path(app_dir)
+        target_main = ""
+        if (base / "application.asar").exists():
+            # Works for both the packed asar file and the unpacked directory.
+            target_main = QQ_DEFAULT_MAIN
+        else:
+            for alt in QQ_MAIN_FALLBACKS:
+                if (base / alt).exists():
+                    target_main = alt
+                    break
+            if not target_main:
+                return {
+                    "ok": False,
+                    "message": (
+                        "找不到 QQ 原始入口文件，无法自动恢复；"
+                        "请重装 Linux QQ（sudo apt-get install --reinstall ./linuxqq_*.deb）"
+                    ),
+                }
+        pkg_path = base / "package.json"
+        try:
+            data = json.loads(pkg_path.read_text(encoding="utf-8", errors="ignore"))
+        except Exception as exc:
+            return {"ok": False, "message": f"读取 package.json 失败: {shorten(str(exc), 140)}"}
+        data["main"] = target_main
+        tmp = self.manager.persistent_dir / "package.json.snowluma"
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        steps = []
+        for args in (
+            ["cp", str(pkg_path), f"{pkg_path}.napcat-bak"],
+            ["cp", str(tmp), str(pkg_path)],
+            ["chmod", "644", str(pkg_path)],
+        ):
+            code, output = await run_sudo(self.manager.plugin, args)
+            steps.append({"command": " ".join(args), "ok": code == 0, "output": output})
+            if code != 0:
+                return {
+                    "ok": False,
+                    "message": f"恢复 QQ 启动入口失败: {shorten(output, 180)}",
+                    "steps": steps,
+                }
+        loader = base / "loadNapCat.js"
+        if loader.is_file():
+            code, output = await run_sudo(
+                self.manager.plugin, ["mv", str(loader), f"{loader}.disabled"]
+            )
+            steps.append(
+                {"command": f"mv {loader} {loader}.disabled", "ok": code == 0, "output": output}
+            )
+        self.manager._log(f"[qq] 已恢复 QQ 启动入口: {target_main}")
+        return {
+            "ok": True,
+            "main": target_main,
+            "steps": steps,
+            "message": f"已恢复 QQ 启动入口为 {target_main}，请重新「启动 QQ」",
+        }
+
     async def repair_qq_ui(self) -> Dict[str, Any]:
         """Roll back a broken QQ hot update, a known cause of a blank login UI.
 
@@ -1040,6 +1175,11 @@ class QQManager:
         if IS_WINDOWS:
             return {"ok": False, "message": "该修复仅适用于 Linux"}
         await self.cleanup_all()
+        entry = await self.repair_qq_entry()
+        if entry.get("ok") and not entry.get("already"):
+            return entry
+        if not entry.get("ok") and entry.get("message", "").startswith("QQ 启动入口被"):
+            return entry
         base = self._qq_versions_dir()
         renamed: List[str] = []
         stamp = time.strftime("%Y%m%d%H%M%S")
@@ -1302,12 +1442,23 @@ class QQManager:
                 "pids": info["running_pids"],
                 "message": "QQ 已在运行，未重复启动",
             }
+        entry = await asyncio.to_thread(self.qq_entry_state)
+        if entry.get("hijacked"):
+            self.manager._log(
+                "[qq] [warn] QQ 启动入口被 NapCat 补丁接管（main="
+                f"{entry.get('main')}）；NapCat 文件缺失时 QQ 不会创建登录窗口，"
+                "请点「修复 QQ 登录界面」",
+                "warning",
+            )
         self._launching = True
         before_all = set(running_qq_pids())
         before_main = set(info["running_pids"])
         exe = info["path"]
         display = await asyncio.to_thread(self.ensure_display) if not IS_WINDOWS else ""
         launch_env = os.environ.copy()
+        # A leftover NapCat env var would make loadNapCat.js look for a module
+        # in a plugin directory that no longer exists.
+        launch_env.pop("NAPCAT_BOOTMAIN", None)
         if display:
             launch_env["DISPLAY"] = display
             # Force Qt/Electron onto X11. A stale WAYLAND_DISPLAY in the
