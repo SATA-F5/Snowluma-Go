@@ -432,7 +432,9 @@ class QQManager:
                 try:
                     with open(log_path, "ab") as log:
                         self._xvfb_proc = subprocess.Popen(
-                            [xvfb, display, "-screen", "0", "1280x800x24", "-ac"],
+                            # Match SnowLuma's documented headless screen:
+                            # 1920x1080 at 16-bit works with Linux QQ's login UI.
+                            [xvfb, display, "-screen", "0", "1920x1080x16", "-ac"],
                             stdout=log,
                             stderr=log,
                             start_new_session=True,
@@ -471,25 +473,28 @@ class QQManager:
 
         env = {**os.environ, "DISPLAY": display}
         if self._openbox_proc is None or self._openbox_proc.poll() is not None:
-            openbox = shutil.which("openbox")
-            if openbox:
+            # SnowLuma's manual Linux guide uses fluxbox specifically; openbox
+            # is only a fallback. Without a real WM the QQ login dialog often
+            # never gets mapped, which is exactly a black VNC screen.
+            wm = shutil.which("fluxbox") or shutil.which("openbox")
+            if wm:
                 try:
                     self._openbox_proc = subprocess.Popen(
-                        [openbox],
+                        [wm],
                         env=env,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         start_new_session=True,
                     )
-                    self.manager._log(f"[qq] 已启动窗口管理器 openbox: {display}")
+                    self.manager._log(f"[qq] 已启动窗口管理器 {Path(wm).name}: {display}")
                 except Exception as exc:
                     self.manager._log(
-                        f"[qq] [warn] 启动 openbox 失败: {shorten(str(exc), 140)}",
+                        f"[qq] [warn] 启动窗口管理器失败: {shorten(str(exc), 140)}",
                         "warning",
                     )
             else:
                 self.manager._log(
-                    "[qq] [warn] 未安装 openbox，QQ 窗口可能无法正常显示",
+                    "[qq] [warn] 未安装 fluxbox/openbox，QQ 窗口可能无法正常显示",
                     "warning",
                 )
 
@@ -817,6 +822,21 @@ class QQManager:
                     killed.append(pid)
                 except Exception:
                     pass
+        # On a headless host, orphaned window managers from a previous plugin
+        # process can prevent fluxbox from taking over the display.
+        if not os.environ.get("DISPLAY"):
+            for process_name in ("fluxbox", "openbox"):
+                for pid in list_pids_by_name(process_name):
+                    if pid in killed:
+                        continue
+                    uid = process_uid(pid)
+                    if current_uid is not None and uid is not None and uid != current_uid:
+                        continue
+                    try:
+                        kill_pid_tree(pid)
+                        killed.append(pid)
+                    except Exception:
+                        pass
         if killed:
             self.manager._log(f"[qq] 已清理虚拟显示进程: {sorted(killed)}")
         return killed
@@ -915,6 +935,7 @@ class QQManager:
                     exe,
                     "--no-sandbox",
                     "--disable-gpu",
+                    "--disable-software-rasterizer",
                     "--disable-gpu-compositing",
                     "--disable-dev-shm-usage",
                     "--ozone-platform=x11",

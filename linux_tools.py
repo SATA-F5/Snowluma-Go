@@ -100,8 +100,35 @@ async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
         )
     ok = ok and code == 0
 
+    # SnowLuma's native hook uses ptrace. The official manual deployment gives
+    # the real Node binary a file capability; ptrace_scope=0 alone is not
+    # enough in containers / hardened kernels.
+    node = ""
+    manager = getattr(plugin, "manager", None)
+    if manager is not None:
+        try:
+            node = str((manager.node_runtime() or {}).get("chosen") or "")
+        except Exception:
+            node = ""
+    if not node:
+        node = shutil.which("node") or ""
+    if node:
+        try:
+            node = str(Path(node).resolve())
+        except Exception:
+            pass
+        code, output = await run_sudo(plugin, ["setcap", "cap_sys_ptrace=ep", node])
+        steps.append(
+            {
+                "command": f"setcap cap_sys_ptrace=ep {node}",
+                "ok": code == 0,
+                "output": output,
+            }
+        )
+        ok = ok and code == 0
+
     if ok:
-        message = "QQ 权限与 ptrace 设置已修复，请重启 QQ 后再挂载"
+        message = "QQ 权限与 ptrace 设置已修复，请重启 SnowLuma 和 QQ 后再挂载"
     else:
         failed = next((step for step in steps if not step["ok"]), None)
         detail = ""
@@ -133,7 +160,10 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
             "-y",
             "xvfb",
             "x11vnc",
+            "fluxbox",
             "openbox",
+            "dbus-x11",
+            "libcap2-bin",
             "scrot",
             "imagemagick",
             "x11-utils",
@@ -142,16 +172,21 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
     )
     steps.append(
         {
-            "command": "apt-get install -y xvfb x11vnc openbox scrot imagemagick x11-utils",
+            "command": (
+                "apt-get install -y xvfb x11vnc fluxbox openbox dbus-x11 "
+                "libcap2-bin scrot imagemagick x11-utils"
+            ),
             "ok": code == 0,
             "output": output,
         }
     )
     missing = [
         name
-        for name in ("Xvfb", "x11vnc", "openbox", "xwininfo")
+        for name in ("Xvfb", "x11vnc", "xwininfo")
         if not shutil.which(name)
     ]
+    if not (shutil.which("fluxbox") or shutil.which("openbox")):
+        missing.append("fluxbox/openbox")
     if not any(shutil.which(name) for name in ("scrot", "import", "ffmpeg")):
         missing.append("scrot/imagemagick")
     if missing:
