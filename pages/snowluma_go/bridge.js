@@ -479,6 +479,7 @@
         $("btn-open-webui").disabled = !(running && status.webui_url);
         $("btn-qq-login").disabled = !(status.qq && status.qq.installed) || S.busy.has("qq-qr");
         $("btn-fix-linux").disabled = S.busy.has("linux-fix");
+        $("btn-qq-repair-ui").disabled = S.busy.has("qq-repair");
         $("btn-install-deps").disabled = S.busy.has("linux-deps");
     }
 
@@ -978,6 +979,18 @@
         refreshStatus();
     }
 
+    async function actionRepairQQ() {
+        if (!(await confirmDialog(
+            "会先结束 QQ 进程，再把 ~/.config/QQ/versions 下的热更新版本改名备份，" +
+            "让 QQ 回退到安装包自带版本。QQ 登录界面空白 / 不显示时使用。继续？",
+            "修复 QQ 登录界面"
+        ))) return;
+        const result = await run("qq-repair", () => apiPost("qq/repair-ui", {}, 60000));
+        if (result) toast(result.message || (result.ok ? "已回滚 QQ 热更新" : "修复失败"),
+            result.ok ? "ok" : "err", 9000);
+        refreshStatus();
+    }
+
     async function actionInstallDeps() {
         if (!(await confirmDialog(
             "将使用 sudo apt-get 安装 xvfb、x11vnc、fluxbox、openbox、dbus-x11、" +
@@ -1348,6 +1361,7 @@
         $("btn-qq-cleanup").addEventListener("click", actionCleanupQQ);
         $("btn-qq-login").addEventListener("click", openQQLoginModal);
         $("btn-fix-linux").addEventListener("click", actionFixLinux);
+        $("btn-qq-repair-ui").addEventListener("click", actionRepairQQ);
         $("btn-install-deps").addEventListener("click", actionInstallDeps);
         $("btn-qq-login-refresh").addEventListener("click", refreshQQLogin);
         $("btn-qq-login-restart").addEventListener("click", restartQQLogin);

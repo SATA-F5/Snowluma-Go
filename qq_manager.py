@@ -814,9 +814,18 @@ class QQManager:
         tail = self._qq_log_tail(700)
         if tail:
             lines.append("qq.log: " + tail)
+        versions = self._qq_versions_dir()
+        try:
+            builds = sorted(p.name for p in versions.iterdir() if p.is_dir()) if versions.is_dir() else []
+        except Exception:
+            builds = []
+        lines.append(
+            "QQ 热更新版本目录: "
+            + (f"{versions} -> {', '.join(builds)}" if builds else f"{versions}（不存在）")
+        )
         return "\n".join(lines)
 
-    def _display_has_qq_window(self, display: str) -> bool:
+    def _display_has_qq_window(self, display: str, *, log_missing: bool = True) -> bool:
         """Best-effort check that QQ actually mapped a window on this display."""
         xwininfo = find_binary("xwininfo")
         if not xwininfo:
@@ -847,11 +856,12 @@ class QQManager:
                     break
             if window_line:
                 return True
-            self.manager._log(
-                f"[qq] [warn] {display} 没有可见的 QQ 窗口；当前窗口树: "
-                f"{shorten(tree.strip(), 500)}",
-                "warning",
-            )
+            if log_missing:
+                self.manager._log(
+                    f"[qq] [warn] {display} 没有可见的 QQ 窗口；当前窗口树: "
+                    f"{shorten(tree.strip(), 500)}",
+                    "warning",
+                )
             return False
         except Exception:
             return True
@@ -906,6 +916,53 @@ class QQManager:
         await self.cleanup_all()
         await asyncio.sleep(0.8)
         return await self.launch()
+
+    @staticmethod
+    def _qq_versions_dir() -> Path:
+        base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+        return Path(base) / "QQ" / "versions"
+
+    async def repair_qq_ui(self) -> Dict[str, Any]:
+        """Roll back a broken QQ hot update, a known cause of a blank login UI.
+
+        QQNT hot-updates itself into ``~/.config/QQ/versions/<build>``. Some
+        downloaded builds ship an unusable ``libssh2.so.1`` and then the login
+        window never appears (upstream reports "only background" or no window).
+        Renaming the build folder makes QQ fall back to the bundled version.
+        """
+        if IS_WINDOWS:
+            return {"ok": False, "message": "该修复仅适用于 Linux"}
+        await self.cleanup_all()
+        base = self._qq_versions_dir()
+        renamed: List[str] = []
+        stamp = time.strftime("%Y%m%d%H%M%S")
+        try:
+            if base.is_dir():
+                for entry in sorted(base.iterdir()):
+                    if not entry.is_dir() or entry.name.startswith("."):
+                        continue
+                    target = entry.with_name(f"{entry.name}.bak-{stamp}")
+                    try:
+                        entry.rename(target)
+                        renamed.append(entry.name)
+                    except Exception:
+                        continue
+        except Exception as exc:
+            return {"ok": False, "message": f"处理 QQ 版本目录失败: {shorten(str(exc), 160)}"}
+        if not renamed:
+            return {
+                "ok": False,
+                "message": (
+                    f"未发现 QQ 热更新版本目录（{base}），黑屏可能不是热更新导致；"
+                    "请查看 qq.log 与诊断信息"
+                ),
+            }
+        self.manager._log(f"[qq] 已回滚 QQ 热更新版本: {renamed}")
+        return {
+            "ok": True,
+            "renamed": renamed,
+            "message": "已回滚 QQ 热更新版本，请重新「启动 QQ」",
+        }
 
     async def login_qr(self) -> Dict[str, Any]:
         if IS_WINDOWS:
@@ -1223,7 +1280,9 @@ class QQManager:
                         window_ok = False
                         for _ in range(8):
                             await asyncio.sleep(1)
-                            if await asyncio.to_thread(self._display_has_qq_window, display):
+                            if await asyncio.to_thread(
+                                self._display_has_qq_window, display, log_missing=False
+                            ):
                                 window_ok = True
                                 break
                         if window_ok:
@@ -1231,7 +1290,7 @@ class QQManager:
                         else:
                             self.manager._log(
                                 f"[qq] [warn] QQ 主进程已启动，但 {display} 上仍未出现窗口"
-                                f"；qq.log: {self._qq_log_tail(500) or '无输出'}",
+                                f"；qq.log: {self._qq_log_tail(800) or '无输出'}",
                                 "warning",
                             )
                     return {"ok": True, "pids": sorted(new_main), "message": "QQ 已启动"}

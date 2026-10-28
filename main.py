@@ -127,6 +127,7 @@ class SnowLumaGoPlugin(Star):
             ("qq/cleanup", self.api_qq_cleanup, ["POST"], "清理当前用户的 QQ 进程"),
             ("qq/restart", self.api_qq_restart, ["POST"], "重启 QQ 到虚拟显示"),
             ("qq/login-qr", self.api_qq_login_qr, ["POST"], "截取 QQ 登录二维码"),
+            ("qq/repair-ui", self.api_qq_repair_ui, ["POST"], "修复 QQ 登录界面"),
             ("linux/fix-permissions", self.api_linux_fix_permissions, ["POST"], "修复 QQ 权限"),
             ("linux/install-deps", self.api_linux_install_deps, ["POST"], "安装 Linux 依赖"),
             ("hook/all", self.api_hook_all, ["POST"], "挂载全部 QQ 进程"),
@@ -400,6 +401,18 @@ class SnowLumaGoPlugin(Star):
             return json_response(await self.manager.qq.login_qr())
         except Exception as exc:
             return error_response(f"截取 QQ 登录二维码失败: {shorten(str(exc), 200)}")
+
+    async def api_qq_repair_ui(self):
+        try:
+            result = await self.manager.qq.repair_qq_ui()
+            if result.get("ok"):
+                try:
+                    await self.manager.refresh_accounts()
+                except Exception:
+                    pass
+            return json_response(result)
+        except Exception as exc:
+            return error_response(f"修复 QQ 登录界面失败: {shorten(str(exc), 200)}")
 
     async def api_linux_fix_permissions(self):
         try:
