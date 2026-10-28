@@ -47,6 +47,9 @@
 - 新增「修复 QQ 登录界面」维护按钮：把 `~/.config/QQ/versions` 下的热更新版本改名备份，让 QQ 回退到安装包自带版本（QQ 热更新自带损坏的 `libssh2.so.1` 时登录界面会空白或不出现）
 - 窗口探测失败只在启动结束时记录一次完整窗口树，避免每秒刷屏
 - `qq.log` 摘要会过滤 Chromium/Electron 的 `[pid:date:WARNING]` 噪声，只保留 QQ 自身的 Node 报错，便于定位登录窗口不出现的原因
+- 摘要改为只读取本次启动后新增的日志，并从第一处 `UnhandledPromiseRejection / Error` 开始截取，确保能看到真正的错误头而不是栈尾
+- 启动 QQ 时自动预加载系统 `libssh2`：QQ 自带 `libssh2.so.1` 与系统 `libcurl` 不匹配时（`undefined symbol: libssh2_session_set_read_timeout`）会导致登录窗口完全不创建
+- 诊断信息增加 libssh2 状态与 QQ 自带库路径；「修复 QQ 登录界面」在缺少系统 libssh2 时给出安装提示
 
 ## 1.0.0
 

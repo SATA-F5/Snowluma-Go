@@ -120,6 +120,64 @@ _BIN_DIRS = (
 )
 
 
+def find_system_libssh2() -> str:
+    """Locate the distro's libssh2.
+
+    Linux QQ ships its own ``libssh2.so.1``. When the system ``libcurl`` is
+    newer than that copy, ``node-loader`` fails with
+    ``undefined symbol: libssh2_session_set_read_timeout``; the login window
+    is never created and Node only reports an unhandled rejection. Preloading
+    the system library is the documented workaround.
+    """
+    if IS_WINDOWS:
+        return ""
+    for candidate in (
+        "/usr/lib/x86_64-linux-gnu/libssh2.so.1",
+        "/lib/x86_64-linux-gnu/libssh2.so.1",
+        "/usr/lib/aarch64-linux-gnu/libssh2.so.1",
+        "/lib/aarch64-linux-gnu/libssh2.so.1",
+        "/usr/lib64/libssh2.so.1",
+        "/usr/lib/libssh2.so.1",
+        "/usr/lib/libssh2.so",
+    ):
+        try:
+            if Path(candidate).is_file():
+                return candidate
+        except OSError:
+            continue
+    try:
+        result = subprocess.run(
+            ["ldconfig", "-p"], capture_output=True, text=True, timeout=5
+        )
+        for line in (result.stdout or "").splitlines():
+            if "libssh2.so" not in line or "=>" not in line:
+                continue
+            path = line.split("=>")[-1].strip()
+            if Path(path).is_file():
+                return path
+    except Exception:
+        pass
+    return ""
+
+
+def find_qq_bundled_libssh2() -> List[str]:
+    """List libssh2 copies shipped inside the QQ installation."""
+    if IS_WINDOWS:
+        return []
+    found: List[str] = []
+    for root in ("/opt/QQ/resources/app", "/opt/qq/resources/app"):
+        base = Path(root)
+        if not base.is_dir():
+            continue
+        try:
+            for candidate in base.rglob("libssh2.so*"):
+                if candidate.is_file():
+                    found.append(str(candidate))
+        except OSError:
+            continue
+    return found
+
+
 def find_binary(name: str) -> Optional[str]:
     """Resolve a binary even when the service has a minimal ``PATH``.
 
@@ -289,6 +347,7 @@ class QQManager:
         self._display = ""
         self._wm_name = ""
         self._qq_proc: Optional[subprocess.Popen] = None
+        self._qq_log_offset = 0
 
     # ---------------- detection ----------------
 
@@ -776,16 +835,22 @@ class QQManager:
         return self._tail_log(self.manager.persistent_dir / "qq.log", limit)
 
     def _qq_log_excerpt(self, limit: int = 1200) -> str:
-        """Last app-level lines of qq.log with Chromium noise removed.
+        """First real error of the current QQ run, with Chromium noise removed.
 
         Electron writes a lot of ``[pid:date:WARNING:...]`` chatter that hides
-        the actual Node/QQ error, so drop those and keep the tail.
+        the actual Node/QQ error. We only look at output produced since the
+        current launch and anchor on the first rejection/error line, because
+        the failure header is always *before* the stack tail.
         """
         path = self.manager.persistent_dir / "qq.log"
         try:
-            data = path.read_bytes()[-300_000:]
+            raw = path.read_bytes()
         except Exception:
             return ""
+        offset = min(self._qq_log_offset, len(raw))
+        data = raw[offset:]
+        if len(data) > 400_000:
+            data = data[-400_000:]
         text = data.decode("utf-8", errors="ignore")
         kept: List[str] = []
         for line in text.splitlines():
@@ -795,6 +860,19 @@ class QQManager:
         cleaned = "\n".join(kept).strip()
         if not cleaned:
             return self._qq_log_tail(limit)
+        positions = [
+            cleaned.find(marker)
+            for marker in (
+                "UnhandledPromiseRejectionWarning",
+                "ERR_MODULE_NOT_FOUND",
+                "Cannot find module",
+                "Error:",
+            )
+        ]
+        positions = [pos for pos in positions if pos >= 0]
+        if positions:
+            start = max(0, min(positions) - 120)
+            return cleaned[start:start + limit]
         return cleaned[-limit:]
 
     def _diagnose_display(self, display: str) -> str:
@@ -844,6 +922,13 @@ class QQManager:
         lines.append(
             "QQ 热更新版本目录: "
             + (f"{versions} -> {', '.join(builds)}" if builds else f"{versions}（不存在）")
+        )
+        bundled = find_qq_bundled_libssh2()
+        lines.append(
+            "libssh2: 系统="
+            + (find_system_libssh2() or "未安装")
+            + "；QQ 自带="
+            + (", ".join(bundled) or "无")
         )
         return "\n".join(lines)
 
@@ -972,13 +1057,24 @@ class QQManager:
         except Exception as exc:
             return {"ok": False, "message": f"处理 QQ 版本目录失败: {shorten(str(exc), 160)}"}
         if not renamed:
-            return {
-                "ok": False,
-                "message": (
-                    f"未发现 QQ 热更新版本目录（{base}），黑屏可能不是热更新导致；"
+            system_ssh2 = find_system_libssh2()
+            bundled = find_qq_bundled_libssh2()
+            if not system_ssh2:
+                message = (
+                    "未发现 QQ 热更新版本，但系统缺少 libssh2。请先安装："
+                    "sudo apt-get install -y libssh2-1，然后重新启动 QQ"
+                )
+            elif bundled:
+                message = (
+                    "未发现 QQ 热更新版本。已检测到 QQ 自带 libssh2，启动时会自动预加载系统 "
+                    f"{system_ssh2}；请点「启动 QQ」重试"
+                )
+            else:
+                message = (
+                    f"未发现 QQ 热更新版本目录（{base}），也没有找到 QQ 自带的 libssh2；"
                     "请查看 qq.log 与诊断信息"
-                ),
-            }
+                )
+            return {"ok": False, "message": message}
         self.manager._log(f"[qq] 已回滚 QQ 热更新版本: {renamed}")
         return {
             "ok": True,
@@ -1223,6 +1319,11 @@ class QQManager:
             launch_env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
             launch_env.setdefault("QT_X11_NO_MITSHM", "1")
             launch_env.setdefault("NO_AT_BRIDGE", "1")
+            system_ssh2 = await asyncio.to_thread(find_system_libssh2)
+            if system_ssh2:
+                preload = launch_env.get("LD_PRELOAD", "").strip()
+                launch_env["LD_PRELOAD"] = f"{system_ssh2} {preload}".strip()
+                self.manager._log(f"[qq] 已预加载系统 libssh2: {system_ssh2}")
             try:
                 runtime_dir = Path(f"/tmp/runtime-{os.getuid()}")
                 runtime_dir.mkdir(mode=0o700, exist_ok=True)
@@ -1267,8 +1368,9 @@ class QQManager:
                 try:
                     if qq_log.exists() and qq_log.stat().st_size > 2 * 1024 * 1024:
                         qq_log.write_bytes(b"")
+                    self._qq_log_offset = qq_log.stat().st_size if qq_log.exists() else 0
                 except Exception:
-                    pass
+                    self._qq_log_offset = 0
                 with open(qq_log, "ab") as log:
                     self._qq_proc = subprocess.Popen(
                         cmd,
