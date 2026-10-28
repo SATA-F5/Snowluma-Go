@@ -876,8 +876,18 @@ class QQManager:
                             "请先点「安装 Linux 依赖」并查看 xvfb.log。"
                         ),
                     }
+                # QQNT/Electron on Xvfb often creates the process but never
+                # maps a window unless the Chromium sandbox/GPU paths used by
+                # the official Linux launcher are disabled.
+                cmd = [
+                    exe,
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-gpu-compositing",
+                    "--disable-dev-shm-usage",
+                ]
                 subprocess.Popen(
-                    [exe],
+                    cmd,
                     cwd=str(Path(exe).parent),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
