@@ -974,7 +974,8 @@
 
     async function actionInstallDeps() {
         if (!(await confirmDialog(
-            "将使用 sudo apt-get 安装 xvfb、x11vnc、openbox、scrot，可能需要几分钟。继续？",
+            "将使用 sudo apt-get 安装 xvfb、x11vnc、fluxbox、openbox、dbus-x11、" +
+            "libcap2-bin、scrot、imagemagick、x11-utils，可能需要几分钟。继续？",
             "安装依赖"
         ))) return;
         const result = await run("linux-deps", () => apiPost("linux/install-deps"));
