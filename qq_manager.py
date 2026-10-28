@@ -314,7 +314,43 @@ class QQManager:
                 return result.returncode == 0
             except Exception:
                 return False
+        token = display.lstrip(":").split(".")[0]
+        lock = Path(f"/tmp/.X{token}-lock")
+        if lock.exists():
+            try:
+                pid = int(lock.read_text(encoding="utf-8", errors="ignore").strip())
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return False
+            except (OSError, ValueError):
+                pass
         return self._display_socket(display).exists()
+
+    def _pick_free_display(self, preferred: str) -> str:
+        """Find a display whose lock/socket is not held by another user."""
+        token = preferred.lstrip(":").split(".")[0]
+        try:
+            base = int(token)
+        except ValueError:
+            return preferred
+        for number in [base, *range(base + 1, base + 20)]:
+            candidate = f":{number}"
+            if self._display_alive(candidate):
+                return candidate
+            lock = Path(f"/tmp/.X{number}-lock")
+            sock = self._display_socket(candidate)
+            if not lock.exists() and not sock.exists():
+                return candidate
+            # Stale files owned by this user can be removed; root-owned locks
+            # stay and we simply move on to the next display number.
+            for stale in (lock, sock):
+                try:
+                    stale.unlink()
+                except Exception:
+                    pass
+            if not lock.exists() and not sock.exists():
+                return candidate
+        return preferred
 
     def ensure_display(self) -> str:
         """Start Xvfb/openbox/x11vnc when the host has no visible display."""
@@ -331,13 +367,21 @@ class QQManager:
         started = False
         if not self._display_alive(display):
             # A killed Xvfb leaves /tmp/.X11-unix/X99 and /tmp/.X99-lock
-            # behind; removing stale files is required before retrying.
+            # behind; a root-owned lock cannot be unlinked by astrbot, so fall
+            # back to :100, :101, ... instead of failing every launch.
             token = display.lstrip(":").split(".")[0]
             for stale in (self._display_socket(display), Path(f"/tmp/.X{token}-lock")):
                 try:
                     stale.unlink()
                 except Exception:
                     pass
+            free_display = self._pick_free_display(display)
+            if free_display != display:
+                self.manager._log(
+                    f"[qq] [warn] 显示 {display} 的锁不可用，改用 {free_display}",
+                    "warning",
+                )
+                display = free_display
             xvfb = shutil.which("Xvfb")
             if not xvfb:
                 self.manager._log(
