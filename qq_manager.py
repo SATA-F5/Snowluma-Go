@@ -625,7 +625,14 @@ class QQManager:
                 timeout=5,
             )
             tree = (result.stdout or "").lower()
-            return "qq" in tree or "登录" in tree
+            found = "qq" in tree or "登录" in tree
+            if not found:
+                self.manager._log(
+                    f"[qq] [warn] {display} 没有 QQ 窗口；当前窗口树: "
+                    f"{shorten((result.stdout or '').strip(), 500)}",
+                    "warning",
+                )
+            return found
         except Exception:
             return True
 
@@ -823,11 +830,27 @@ class QQManager:
             try:
                 scope = int(Path("/proc/sys/kernel/yama/ptrace_scope").read_text().strip())
                 if scope > 0:
-                    self.manager._log(
-                        f"[qq] [warn] kernel.yama.ptrace_scope={scope}，SnowLuma 可能无法读取 QQ "
-                        "进程；请在配置里点「修复 QQ 权限」",
-                        "warning",
-                    )
+                    if sudo_password(self.manager.plugin):
+                        code, output = await run_sudo(
+                            self.manager.plugin,
+                            ["sysctl", "-w", "kernel.yama.ptrace_scope=0"],
+                            timeout=30,
+                        )
+                        if code == 0:
+                            self.manager._log(
+                                "[qq] 已自动设置 kernel.yama.ptrace_scope=0（sudo）"
+                            )
+                        else:
+                            self.manager._log(
+                                f"[qq] [warn] 自动设置 ptrace_scope 失败: {shorten(output, 160)}",
+                                "warning",
+                            )
+                    else:
+                        self.manager._log(
+                            f"[qq] [warn] kernel.yama.ptrace_scope={scope}，SnowLuma 可能无法读取 QQ "
+                            "进程；请在配置里点「修复 QQ 权限」",
+                            "warning",
+                        )
             except Exception:
                 pass
         info = self.detect()
@@ -857,6 +880,15 @@ class QQManager:
             launch_env.pop("WAYLAND_DISPLAY", None)
             launch_env["QT_QPA_PLATFORM"] = "xcb"
             launch_env["ELECTRON_OZONE_PLATFORM_HINT"] = "x11"
+            launch_env["XDG_SESSION_TYPE"] = "x11"
+            launch_env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+            launch_env.setdefault("QT_X11_NO_MITSHM", "1")
+            try:
+                runtime_dir = Path(f"/tmp/runtime-{os.getuid()}")
+                runtime_dir.mkdir(mode=0o700, exist_ok=True)
+                launch_env["XDG_RUNTIME_DIR"] = str(runtime_dir)
+            except Exception:
+                pass
         try:
             if IS_WINDOWS:
                 subprocess.Popen(
@@ -885,6 +917,7 @@ class QQManager:
                     "--disable-gpu",
                     "--disable-gpu-compositing",
                     "--disable-dev-shm-usage",
+                    "--ozone-platform=x11",
                 ]
                 subprocess.Popen(
                     cmd,
@@ -894,7 +927,7 @@ class QQManager:
                     start_new_session=True,
                     env=launch_env,
                 )
-            self.manager._log(f"[qq] 已启动 QQ: {exe}")
+            self.manager._log(f"[qq] 已启动 QQ: {exe}（DISPLAY={display}）")
             for _ in range(10):
                 await asyncio.sleep(1)
                 after_all = set(running_qq_pids())

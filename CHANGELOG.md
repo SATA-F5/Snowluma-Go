@@ -31,7 +31,8 @@
 - 不再回退到不可见的 `xvfb-run` 启动 QQ；二维码截图前会检查虚拟显示里是否真的有 QQ 窗口，避免显示纯黑截图
 - 增加黑屏检测和「重启 QQ 并刷新」按钮，自动把仍运行在旧 DISPLAY 的 QQ 移到当前虚拟显示
 - 强制 QQ 使用 X11（`QT_QPA_PLATFORM=xcb`、清理 `WAYLAND_DISPLAY`），并记录 openbox / xwininfo 状态，修复 Qt 窗口不显示导致的黑屏
-- Linux 下启动 QQ 增加 `--no-sandbox --disable-gpu --disable-gpu-compositing --disable-dev-shm-usage`，与官方 Xvfb 启动参数一致，避免进程存在但不映射窗口
+- Linux 下启动 QQ 增加 `--no-sandbox --disable-gpu --disable-gpu-compositing --disable-dev-shm-usage --ozone-platform=x11`，并补齐 XDG_RUNTIME_DIR / 软件渲染环境，避免进程存在但不映射窗口
+- 配置 sudo 密码时，启动 QQ 会自动修正 `ptrace_scope`；窗口检查失败会打印当前 X11 窗口树，方便定位黑屏
 
 ## 1.0.0
 
