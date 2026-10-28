@@ -414,38 +414,44 @@ class QQManager:
                     "warning",
                 )
                 display = free_display
-            xvfb = shutil.which("Xvfb")
-            if not xvfb:
-                self.manager._log(
-                    "[qq] [warn] 未安装 Xvfb，无法创建虚拟显示；可点「安装 Linux 依赖」",
-                    "warning",
-                )
-                return os.environ.get("DISPLAY", "")
-            log_path = self.manager.persistent_dir / "xvfb.log"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with open(log_path, "ab") as log:
-                    self._xvfb_proc = subprocess.Popen(
-                        [xvfb, display, "-screen", "0", "1280x800x24", "-ac"],
-                        stdout=log,
-                        stderr=log,
-                        start_new_session=True,
-                    )
-                time.sleep(1.5)
-                code = self._xvfb_proc.poll()
-                if code is not None:
+            if self._display_alive(display):
+                # The picked display is an already-running Xvfb (often an
+                # orphan from the previous plugin process). Reuse it instead of
+                # immediately spawning a competing server on the same display.
+                self.manager._log(f"[qq] 复用已有虚拟显示 {display}")
+            else:
+                xvfb = shutil.which("Xvfb")
+                if not xvfb:
                     self.manager._log(
-                        f"[qq] [warn] Xvfb 启动后退出（code={code}）: "
-                        f"{shorten(self._tail_log(log_path), 240)}",
+                        "[qq] [warn] 未安装 Xvfb，无法创建虚拟显示；可点「安装 Linux 依赖」",
                         "warning",
                     )
-                    self._xvfb_proc = None
                     return os.environ.get("DISPLAY", "")
-                started = True
-                self.manager._log(f"[qq] 已启动虚拟显示 {display}")
-            except Exception as exc:
-                self.manager._log(f"[qq] [warn] 启动 Xvfb 失败: {shorten(str(exc), 140)}", "warning")
-                return os.environ.get("DISPLAY", "")
+                log_path = self.manager.persistent_dir / "xvfb.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with open(log_path, "ab") as log:
+                        self._xvfb_proc = subprocess.Popen(
+                            [xvfb, display, "-screen", "0", "1280x800x24", "-ac"],
+                            stdout=log,
+                            stderr=log,
+                            start_new_session=True,
+                        )
+                    time.sleep(1.5)
+                    code = self._xvfb_proc.poll()
+                    if code is not None:
+                        self.manager._log(
+                            f"[qq] [warn] Xvfb 启动后退出（code={code}）: "
+                            f"{shorten(self._tail_log(log_path), 240)}",
+                            "warning",
+                        )
+                        self._xvfb_proc = None
+                        return os.environ.get("DISPLAY", "")
+                    started = True
+                    self.manager._log(f"[qq] 已启动虚拟显示 {display}")
+                except Exception as exc:
+                    self.manager._log(f"[qq] [warn] 启动 Xvfb 失败: {shorten(str(exc), 140)}", "warning")
+                    return os.environ.get("DISPLAY", "")
 
         # A real desktop (DISPLAY=:0) should not get an openbox/x11vnc sidecar.
         # A headless server with a manually/previously started Xvfb should.
@@ -453,7 +459,12 @@ class QQManager:
         env_display = os.environ.get("DISPLAY", "").strip()
         # ":99" is the plugin's own virtual display; even if the service env
         # already exports DISPLAY=:99 we still need to start x11vnc on it.
-        headless_managed = bool(configured_display) or not env_display or display == ":99"
+        headless_managed = (
+            bool(configured_display)
+            or not env_display
+            or display == ":99"
+            or display != self._display_name()
+        )
         if not started and self._xvfb_proc is None and not headless_managed:
             self._display = display
             return display
@@ -678,11 +689,57 @@ class QQManager:
             try:
                 if proc.poll() is None:
                     proc.terminate()
+                    try:
+                        proc.wait(timeout=2)
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
             except Exception:
                 pass
         self._vnc_proc = None
         self._openbox_proc = None
         self._xvfb_proc = None
+
+    def cleanup_displays(self) -> List[int]:
+        """Reap Xvfb/x11vnc processes for the plugin's virtual displays.
+
+        The explicit "清理残留" action is allowed to clean displays left behind
+        by a previous plugin process. Only the current Unix user's processes
+        are touched, and only displays in our managed range.
+        """
+        if IS_WINDOWS:
+            return []
+        display = self._display or self._display_name()
+        managed = {self._display_name(), display, ":99"}
+        managed.update(f":{number}" for number in range(100, 111))
+        current_uid = os.getuid() if hasattr(os, "getuid") else None
+        killed: List[int] = []
+        self.shutdown_display()
+        for process_name in ("Xvfb", "x11vnc"):
+            for pid in list_pids_by_name(process_name):
+                if pid in killed:
+                    continue
+                uid = process_uid(pid)
+                if current_uid is not None and uid is not None and uid != current_uid:
+                    continue
+                try:
+                    cmdline = Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(b"\x00", b" ").decode(
+                        "utf-8", errors="ignore"
+                    )
+                except Exception:
+                    continue
+                if not any(candidate in cmdline for candidate in managed):
+                    continue
+                try:
+                    kill_pid_tree(pid)
+                    killed.append(pid)
+                except Exception:
+                    pass
+        if killed:
+            self.manager._log(f"[qq] 已清理虚拟显示进程: {sorted(killed)}")
+        return killed
 
     # ---------------- launch / stop ----------------
 

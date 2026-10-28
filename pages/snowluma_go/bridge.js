@@ -875,7 +875,10 @@
     }
 
     async function actionCleanup() {
-        if (!(await confirmDialog("将停止本插件启动的 SnowLuma 并清理安装目录内的残留 node 进程。继续？", "清理"))) return;
+        if (!(await confirmDialog(
+            "将停止本插件启动的 SnowLuma，并清理安装目录内的残留 node、Xvfb、x11vnc 进程。继续？",
+            "清理"
+        ))) return;
         const result = await run("cleanup", () => apiPost("cleanup"));
         if (result) toast(result.message || "已清理", result.ok ? "ok" : "err");
         refreshStatus();

@@ -27,6 +27,7 @@
 - Xvfb 的 `:99` 锁文件被其他用户占用时自动改用 `:100` / `:101`，不再反复报 `Could not create server lock file`
 - 修复重复启动 Xvfb 的问题：复用当前进程已启动的显示，不再因为 `:99` 锁失败而反复拉起 `:101` 并报 `Server is already active`
 - 启动 QQ 时检测 `kernel.yama.ptrace_scope`，非 0 时提示使用「修复 QQ 权限」
+- 「清理残留」现在同时清理本插件使用的 Xvfb / x11vnc 进程，解决旧的 `:101` 显示锁或残留显示服务无法复用的问题
 
 ## 1.0.0
 

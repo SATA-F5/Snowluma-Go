@@ -931,10 +931,19 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         """Stop the managed process and reap obvious orphans."""
         await self.stop()
         killed = self._kill_orphans()
+        display_killed = await asyncio.to_thread(self.qq.cleanup_displays)
         for stray in (self.persistent_dir / "downloads").glob(".staging-*"):
             shutil.rmtree(stray, ignore_errors=True)
         self._auto_synced_uin = ""
-        return {"ok": True, "killed": killed, "message": "已清理运行状态"}
+        message = "已清理运行状态"
+        if display_killed:
+            message += f"，并清理 {len(display_killed)} 个 Xvfb/x11vnc 进程"
+        return {
+            "ok": True,
+            "killed": killed,
+            "displays": display_killed,
+            "message": message,
+        }
 
     def _kill_orphans(self) -> List[int]:
         """Kill node processes that belong to *our* install directory.
