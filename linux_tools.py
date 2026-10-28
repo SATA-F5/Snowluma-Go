@@ -147,7 +147,11 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
             "output": output,
         }
     )
-    missing = [name for name in ("Xvfb", "x11vnc") if not shutil.which(name)]
+    missing = [
+        name
+        for name in ("Xvfb", "x11vnc", "openbox", "xwininfo")
+        if not shutil.which(name)
+    ]
     if not any(shutil.which(name) for name in ("scrot", "import", "ffmpeg")):
         missing.append("scrot/imagemagick")
     if missing:

@@ -481,8 +481,17 @@ class QQManager:
                         stderr=subprocess.DEVNULL,
                         start_new_session=True,
                     )
-                except Exception:
-                    pass
+                    self.manager._log(f"[qq] 已启动窗口管理器 openbox: {display}")
+                except Exception as exc:
+                    self.manager._log(
+                        f"[qq] [warn] 启动 openbox 失败: {shorten(str(exc), 140)}",
+                        "warning",
+                    )
+            else:
+                self.manager._log(
+                    "[qq] [warn] 未安装 openbox，QQ 窗口可能无法正常显示",
+                    "warning",
+                )
 
         try:
             port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
@@ -603,6 +612,10 @@ class QQManager:
         """Best-effort check that QQ actually mapped a window on this display."""
         xwininfo = shutil.which("xwininfo")
         if not xwininfo:
+            self.manager._log(
+                "[qq] [warn] 未安装 xwininfo，无法检查 QQ 窗口；可点「安装 Linux 依赖」",
+                "warning",
+            )
             return True
         try:
             result = subprocess.run(
@@ -839,6 +852,11 @@ class QQManager:
         launch_env = os.environ.copy()
         if display:
             launch_env["DISPLAY"] = display
+            # Force Qt/Electron onto X11. A stale WAYLAND_DISPLAY in the
+            # service environment would otherwise make QQ render off-screen.
+            launch_env.pop("WAYLAND_DISPLAY", None)
+            launch_env["QT_QPA_PLATFORM"] = "xcb"
+            launch_env["ELECTRON_OZONE_PLATFORM_HINT"] = "x11"
         try:
             if IS_WINDOWS:
                 subprocess.Popen(
