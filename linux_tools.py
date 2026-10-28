@@ -185,8 +185,8 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
         for name in ("Xvfb", "x11vnc", "xwininfo")
         if not shutil.which(name)
     ]
-    if not (shutil.which("fluxbox") or shutil.which("openbox")):
-        missing.append("fluxbox/openbox")
+    if not shutil.which("fluxbox"):
+        missing.append("fluxbox")
     if not any(shutil.which(name) for name in ("scrot", "import", "ffmpeg")):
         missing.append("scrot/imagemagick")
     if missing:

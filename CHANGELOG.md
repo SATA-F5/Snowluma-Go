@@ -32,6 +32,7 @@
 - 增加黑屏检测和「重启 QQ 并刷新」按钮，自动把仍运行在旧 DISPLAY 的 QQ 移到当前虚拟显示
 - 强制 QQ 使用 X11（`QT_QPA_PLATFORM=xcb`、清理 `WAYLAND_DISPLAY`），并记录 openbox / xwininfo 状态，修复 Qt 窗口不显示导致的黑屏
 - Linux 下启动 QQ 增加 `--no-sandbox --disable-gpu --disable-software-rasterizer --disable-gpu-compositing --disable-dev-shm-usage --ozone-platform=x11`，并补齐 XDG_RUNTIME_DIR / 软件渲染环境，避免进程存在但不映射窗口
+- 依赖检查现在要求必须安装 fluxbox；只回退 openbox 时日志会明确警告，避免“看起来启动成功但二维码一直黑屏”
 - 对齐 SnowLuma 官方无头部署：优先使用 fluxbox、Xvfb 1920x1080x16，安装 dbus-x11 / libcap2-bin
 - 「修复 QQ 权限」会额外 `setcap cap_sys_ptrace=ep` 到 SnowLuma 的 node，兼容 Yama / 容器环境
 - 配置 sudo 密码时，启动 QQ 会自动修正 `ptrace_scope`；窗口检查失败会打印当前 X11 窗口树，方便定位黑屏

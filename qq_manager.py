@@ -477,6 +477,12 @@ class QQManager:
             # is only a fallback. Without a real WM the QQ login dialog often
             # never gets mapped, which is exactly a black VNC screen.
             wm = shutil.which("fluxbox") or shutil.which("openbox")
+            if wm and Path(wm).name != "fluxbox":
+                self.manager._log(
+                    "[qq] [warn] 未安装 fluxbox，暂用 openbox；QQ 登录窗口可能无法映射，"
+                    "请安装 fluxbox 后点「清理残留」再启动",
+                    "warning",
+                )
             if wm:
                 try:
                     self._openbox_proc = subprocess.Popen(
