@@ -940,6 +940,19 @@
         refreshQQLogin();
     }
 
+    async function restartQQLogin() {
+        if (!(await confirmDialog(
+            "将结束当前 QQ 进程，并在插件管理的虚拟显示里重新启动，继续？",
+            "重启 QQ"
+        ))) return;
+        const result = await run("qq-restart", () => apiPost("qq/restart", {}, 45000));
+        if (result) {
+            toast(result.message || (result.ok ? "QQ 已重启" : "重启 QQ 失败"),
+                result.ok ? "ok" : "err", 5000);
+        }
+        await refreshQQLogin();
+    }
+
     async function actionCopyQQVnc() {
         if (!S.qqVncAddress) {
             toast("当前没有可用的 VNC 地址", "warn", 3000);
@@ -1330,6 +1343,7 @@
         $("btn-fix-linux").addEventListener("click", actionFixLinux);
         $("btn-install-deps").addEventListener("click", actionInstallDeps);
         $("btn-qq-login-refresh").addEventListener("click", refreshQQLogin);
+        $("btn-qq-login-restart").addEventListener("click", restartQQLogin);
         $("btn-copy-qq-vnc").addEventListener("click", actionCopyQQVnc);
         $("btn-close-qq-login").addEventListener("click", () => $("qq-login-modal").classList.remove("visible"));
         $("btn-replay-guide").addEventListener("click", () => {

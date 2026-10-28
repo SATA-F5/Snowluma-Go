@@ -125,6 +125,7 @@ class SnowLumaGoPlugin(Star):
             ("qq/launch", self.api_qq_launch, ["POST"], "启动 QQ"),
             ("qq/stop", self.api_qq_stop, ["POST"], "关闭本插件启动的 QQ"),
             ("qq/cleanup", self.api_qq_cleanup, ["POST"], "清理当前用户的 QQ 进程"),
+            ("qq/restart", self.api_qq_restart, ["POST"], "重启 QQ 到虚拟显示"),
             ("qq/login-qr", self.api_qq_login_qr, ["POST"], "截取 QQ 登录二维码"),
             ("linux/fix-permissions", self.api_linux_fix_permissions, ["POST"], "修复 QQ 权限"),
             ("linux/install-deps", self.api_linux_install_deps, ["POST"], "安装 Linux 依赖"),
@@ -386,6 +387,13 @@ class SnowLumaGoPlugin(Star):
             return json_response(result)
         except Exception as exc:
             return error_response(f"清理 QQ 进程失败: {shorten(str(exc), 200)}")
+
+    async def api_qq_restart(self):
+        try:
+            result = await self.manager.qq.restart_qq()
+            return json_response(result)
+        except Exception as exc:
+            return error_response(f"重启 QQ 失败: {shorten(str(exc), 200)}")
 
     async def api_qq_login_qr(self):
         try:

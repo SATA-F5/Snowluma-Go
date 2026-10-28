@@ -584,6 +584,21 @@ class QQManager:
             "local_only": self._vnc_local_only,
         }
 
+    def _image_mean(self, path: Path) -> Optional[float]:
+        identify = shutil.which("identify")
+        if not identify:
+            return None
+        try:
+            result = subprocess.run(
+                [identify, "-format", "%[fx:mean]", str(path)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return float((result.stdout or "").strip())
+        except Exception:
+            return None
+
     def _display_has_qq_window(self, display: str) -> bool:
         """Best-effort check that QQ actually mapped a window on this display."""
         xwininfo = shutil.which("xwininfo")
@@ -646,6 +661,12 @@ class QQManager:
                 continue
         return False
 
+    async def restart_qq(self) -> Dict[str, Any]:
+        """Restart QQ so it moves onto the plugin's managed virtual display."""
+        await self.cleanup_all()
+        await asyncio.sleep(0.8)
+        return await self.launch()
+
     async def login_qr(self) -> Dict[str, Any]:
         if IS_WINDOWS:
             return {"ok": False, "message": "Windows 会直接显示 QQ 登录窗口，无需截图"}
@@ -691,6 +712,18 @@ class QQManager:
                 "message": message,
                 "display": display,
                 "vnc": await self.vnc_info(),
+            }
+        mean = await asyncio.to_thread(self._image_mean, path)
+        if mean is not None and mean < 0.02:
+            return {
+                "ok": False,
+                "message": (
+                    "截图是黑屏：QQ 没有画在当前虚拟显示上，通常说明它仍在旧的 DISPLAY 中运行。"
+                    "请点下方「重启 QQ 并刷新」，或先点「清理 QQ 进程」再启动 QQ。"
+                ),
+                "display": display,
+                "vnc": await self.vnc_info(),
+                "black": True,
             }
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
         return {
