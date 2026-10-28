@@ -81,6 +81,23 @@ async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
     # it cannot read /proc/<qq-pid>/environ, which breaks the native hook.
     code, output = await run_sudo(plugin, ["sysctl", "-w", "kernel.yama.ptrace_scope=0"])
     steps.append({"command": "sysctl -w kernel.yama.ptrace_scope=0", "ok": code == 0, "output": output})
+    if code == 0:
+        code, output = await run_sudo(
+            plugin,
+            [
+                "sh",
+                "-c",
+                "echo 'kernel.yama.ptrace_scope=0' > "
+                "/etc/sysctl.d/99-snowluma-ptrace.conf",
+            ],
+        )
+        steps.append(
+            {
+                "command": "写入 /etc/sysctl.d/99-snowluma-ptrace.conf",
+                "ok": code == 0,
+                "output": output,
+            }
+        )
     ok = ok and code == 0
 
     if ok:

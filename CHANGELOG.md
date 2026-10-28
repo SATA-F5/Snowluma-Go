@@ -25,6 +25,8 @@
 - DISPLAY 配置兼容 `99` / `:99` 两种写法，避免误判为远程 X11 目标而不启动 Xvfb / VNC
 - Xvfb / x11vnc 启动后会检测进程状态并记录 `xvfb.log` / `x11vnc.log`；清理陈旧 socket，截图失败时区分“缺工具”和“DISPLAY 不可用”
 - Xvfb 的 `:99` 锁文件被其他用户占用时自动改用 `:100` / `:101`，不再反复报 `Could not create server lock file`
+- 修复重复启动 Xvfb 的问题：复用当前进程已启动的显示，不再因为 `:99` 锁失败而反复拉起 `:101` 并报 `Server is already active`
+- 启动 QQ 时检测 `kernel.yama.ptrace_scope`，非 0 时提示使用「修复 QQ 权限」
 
 ## 1.0.0
 
