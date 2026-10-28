@@ -775,6 +775,28 @@ class QQManager:
     def _qq_log_tail(self, limit: int = 400) -> str:
         return self._tail_log(self.manager.persistent_dir / "qq.log", limit)
 
+    def _qq_log_excerpt(self, limit: int = 1200) -> str:
+        """Last app-level lines of qq.log with Chromium noise removed.
+
+        Electron writes a lot of ``[pid:date:WARNING:...]`` chatter that hides
+        the actual Node/QQ error, so drop those and keep the tail.
+        """
+        path = self.manager.persistent_dir / "qq.log"
+        try:
+            data = path.read_bytes()[-300_000:]
+        except Exception:
+            return ""
+        text = data.decode("utf-8", errors="ignore")
+        kept: List[str] = []
+        for line in text.splitlines():
+            if re.match(r"^\[\d+:\d{4}/\d{6}\.", line.strip()):
+                continue
+            kept.append(line)
+        cleaned = "\n".join(kept).strip()
+        if not cleaned:
+            return self._qq_log_tail(limit)
+        return cleaned[-limit:]
+
     def _diagnose_display(self, display: str) -> str:
         """Compact diagnostics shown when QQ never maps a window."""
         lines: List[str] = []
@@ -811,7 +833,7 @@ class QQManager:
                         lines.append("  " + item.decode("utf-8", errors="ignore"))
             except Exception as exc:
                 lines.append(f"PID {pid}: 无法读取 ({shorten(str(exc), 80)})")
-        tail = self._qq_log_tail(700)
+        tail = self._qq_log_excerpt(900)
         if tail:
             lines.append("qq.log: " + tail)
         versions = self._qq_versions_dir()
@@ -1262,7 +1284,7 @@ class QQManager:
                 if self._qq_proc is not None and self._qq_proc.poll() is not None:
                     self.manager._log(
                         "[qq] [warn] QQ 启动后立即退出（code="
-                        f"{self._qq_proc.returncode}）: {self._qq_log_tail(600) or '无输出'}",
+                        f"{self._qq_proc.returncode}）: {self._qq_log_excerpt(800) or '无输出'}",
                         "warning",
                     )
                     break
@@ -1290,7 +1312,7 @@ class QQManager:
                         else:
                             self.manager._log(
                                 f"[qq] [warn] QQ 主进程已启动，但 {display} 上仍未出现窗口"
-                                f"；qq.log: {self._qq_log_tail(800) or '无输出'}",
+                                f"；qq.log: {self._qq_log_excerpt(1000) or '无输出'}",
                                 "warning",
                             )
                     return {"ok": True, "pids": sorted(new_main), "message": "QQ 已启动"}
