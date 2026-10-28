@@ -584,6 +584,23 @@ class QQManager:
             "local_only": self._vnc_local_only,
         }
 
+    def _display_has_qq_window(self, display: str) -> bool:
+        """Best-effort check that QQ actually mapped a window on this display."""
+        xwininfo = shutil.which("xwininfo")
+        if not xwininfo:
+            return True
+        try:
+            result = subprocess.run(
+                [xwininfo, "-display", display, "-root", "-tree"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            tree = (result.stdout or "").lower()
+            return "qq" in tree or "登录" in tree
+        except Exception:
+            return True
+
     def _capture_display(self, display: str, path: Path) -> bool:
         if IS_WINDOWS:
             return False
@@ -648,6 +665,16 @@ class QQManager:
             await asyncio.sleep(2.5)
         else:
             await asyncio.sleep(0.4)
+        if not await asyncio.to_thread(self._display_has_qq_window, display):
+            return {
+                "ok": False,
+                "message": (
+                    "当前虚拟显示里还没有 QQ 窗口（QQ 可能运行在别的 DISPLAY）。"
+                    "请先点「清理 QQ 进程」，再点「启动 QQ」，等登录窗口出现后刷新。"
+                ),
+                "display": display,
+                "vnc": await self.vnc_info(),
+            }
         path = self.manager.persistent_dir / "qq-login.png"
         captured = await asyncio.to_thread(self._capture_display, display, path)
         if not captured:
@@ -790,22 +817,16 @@ class QQManager:
                     env=launch_env,
                 )
             else:
-                cmd = [exe]
-                if not display and not os.environ.get("DISPLAY") and shutil.which("xvfb-run"):
-                    cmd = [
-                        "xvfb-run",
-                        "-a",
-                        "-s",
-                        "-screen 0 1280x800x24",
-                        exe,
-                    ]
-                    self.manager._log(
-                        "[qq] [warn] 未配置 qq_display，使用不可见的 xvfb-run；"
-                        "无桌面服务器请先启动 Xvfb/VNC，并在配置里填写 DISPLAY（如 :99）",
-                        "warning",
-                    )
+                if not display:
+                    return {
+                        "ok": False,
+                        "message": (
+                            "无法创建 Xvfb 虚拟显示，QQ 不会在不可见的 xvfb-run 中启动。"
+                            "请先点「安装 Linux 依赖」并查看 xvfb.log。"
+                        ),
+                    }
                 subprocess.Popen(
-                    cmd,
+                    [exe],
                     cwd=str(Path(exe).parent),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
