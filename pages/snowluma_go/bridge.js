@@ -898,7 +898,8 @@
         refreshStatus();
     }
 
-    async function refreshQQLogin() {
+    async function refreshQQLogin(attempt) {
+        const tries = typeof attempt === "number" ? attempt : 0;
         const image = $("qq-qr-image");
         const hint = $("qq-login-hint");
         const vnc = $("qq-vnc-info");
@@ -913,6 +914,9 @@
             image.src = result.image;
             image.classList.add("visible");
             hint.textContent = result.message || "扫描二维码登录 QQ";
+            if (result.loading && tries < 3) {
+                setTimeout(() => refreshQQLogin(tries + 1), 3000);
+            }
         } else {
             hint.textContent = result.message || "未截取到二维码";
         }

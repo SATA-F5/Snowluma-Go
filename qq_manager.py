@@ -734,6 +734,42 @@ class QQManager:
         except Exception:
             return None
 
+    def _image_center_white_ratio(self, path: Path) -> Optional[float]:
+        """Fraction of near-white pixels in the centre of the frame.
+
+        QQ's startup splash is a small logo on a black canvas, while the real
+        login page has a large white QR card in the middle. That difference is
+        what lets us wait for the QR instead of returning the splash.
+        """
+        convert = find_binary("convert") or find_binary("magick")
+        if not convert:
+            return None
+        try:
+            result = subprocess.run(
+                [
+                    convert,
+                    str(path),
+                    "-gravity",
+                    "center",
+                    "-crop",
+                    "50%x50%+0+0",
+                    "+repage",
+                    "-colorspace",
+                    "Gray",
+                    "-threshold",
+                    "55%",
+                    "-format",
+                    "%[fx:mean]",
+                    "info:",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            return float((result.stdout or "").strip())
+        except Exception:
+            return None
+
     def _display_has_qq_window(self, display: str) -> bool:
         """Best-effort check that QQ actually mapped a window on this display."""
         xwininfo = find_binary("xwininfo")
@@ -843,7 +879,21 @@ class QQManager:
                 "vnc": await self.vnc_info(),
             }
         path = self.manager.persistent_dir / "qq-login.png"
-        captured = await asyncio.to_thread(self._capture_display, display, path)
+        # QQ paints a black splash with a small logo first; the QR card only
+        # shows up a few seconds later. Poll instead of returning the splash.
+        captured = False
+        white_ratio: Optional[float] = None
+        deadline = time.monotonic() + 24.0
+        while True:
+            captured = await asyncio.to_thread(self._capture_display, display, path)
+            if not captured:
+                break
+            white_ratio = await asyncio.to_thread(self._image_center_white_ratio, path)
+            if white_ratio is None or white_ratio >= 0.18:
+                break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(2.0)
         if not captured:
             tools = [name for name in ("scrot", "import", "ffmpeg") if find_binary(name)]
             if not tools:
@@ -860,7 +910,7 @@ class QQManager:
                 "vnc": await self.vnc_info(),
             }
         mean = await asyncio.to_thread(self._image_mean, path)
-        if mean is not None and mean < 0.02:
+        if mean is not None and mean < 0.02 and (white_ratio is None or white_ratio <= 0.001):
             return {
                 "ok": False,
                 "message": (
@@ -872,12 +922,18 @@ class QQManager:
                 "black": True,
             }
         encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        still_loading = white_ratio is not None and white_ratio < 0.18
         return {
             "ok": True,
             "image": "data:image/png;base64," + encoded,
             "display": display,
             "vnc": await self.vnc_info(),
-            "message": "已截取当前虚拟屏幕",
+            "loading": still_loading,
+            "message": (
+                "QQ 仍在加载登录界面（当前是启动画面），请稍等几秒后再点「刷新二维码」"
+                if still_loading
+                else "已截取当前虚拟屏幕"
+            ),
         }
 
     def stop_vnc(self) -> None:
