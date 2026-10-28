@@ -36,6 +36,10 @@
 - 对齐 SnowLuma 官方无头部署：优先使用 fluxbox、Xvfb 1920x1080x16，安装 dbus-x11 / libcap2-bin
 - 「修复 QQ 权限」会额外 `setcap cap_sys_ptrace=ep` 到 SnowLuma 的 node，兼容 Yama / 容器环境
 - 配置 sudo 密码时，启动 QQ 会自动修正 `ptrace_scope`；窗口检查失败会打印当前 X11 窗口树，方便定位黑屏
+- 修复服务进程 `PATH` 精简导致 `which fluxbox` 找不到 `/usr/bin/fluxbox`、从而一直回退 openbox 的问题：改为同时搜索 `/usr/bin` 等标准目录，并在日志里打印实际使用的窗口管理器路径
+- 启动虚拟显示前自动结束占用同一 DISPLAY 的旧窗口管理器，避免 openbox 与 fluxbox 争夺显示导致窗口不映射
+- 窗口管理器异常退出时记录 `window-manager.log` 并自动回退；QQ 启动后主动检查是否已映射窗口
+- 为无头 QQ 创建独立 D-Bus 会话（`dbus-x11`），并设置 `NO_AT_BRIDGE=1`，避免 Electron 在无会话总线环境下不显示登录窗口
 
 ## 1.0.0
 

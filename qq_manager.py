@@ -108,6 +108,38 @@ def _common_qq_paths() -> List[str]:
     ]
 
 
+_BIN_DIRS = (
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/local/sbin",
+    "/usr/sbin",
+    "/sbin",
+    "/snap/bin",
+)
+
+
+def find_binary(name: str) -> Optional[str]:
+    """Resolve a binary even when the service has a minimal ``PATH``.
+
+    AstrBot is often started by systemd/supervisord with ``PATH`` limited to
+    the virtualenv, so ``shutil.which("fluxbox")`` can miss ``/usr/bin``
+    binaries that exist perfectly well for the login shell. That mismatch is
+    what made the plugin silently fall back to openbox.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    for base in _BIN_DIRS:
+        candidate = Path(base) / name
+        try:
+            if candidate.is_file() and os.access(str(candidate), os.X_OK):
+                return str(candidate)
+        except OSError:
+            continue
+    return None
+
+
 def find_qq_executable(manual: str = "") -> Optional[str]:
     """Best-effort QQNT executable lookup (manual path wins)."""
     manual = (manual or "").strip().strip('"')
@@ -254,6 +286,7 @@ class QQManager:
         self._vnc_proc: Optional[subprocess.Popen] = None
         self._vnc_local_only = True
         self._display = ""
+        self._wm_name = ""
 
     # ---------------- detection ----------------
 
@@ -309,7 +342,7 @@ class QQManager:
             return 0
 
     def _display_alive(self, display: str) -> bool:
-        xdpyinfo = shutil.which("xdpyinfo")
+        xdpyinfo = find_binary("xdpyinfo")
         if xdpyinfo:
             try:
                 result = subprocess.run(
@@ -336,6 +369,42 @@ class QQManager:
             except (OSError, ValueError):
                 pass
         return self._display_socket(display).exists()
+
+    def _stop_stale_window_managers(self, display: str) -> None:
+        """Kill window managers left over from a previous plugin process.
+
+        Two window managers fighting over the same display keeps QQ's login
+        dialog unmapped, which looks exactly like a black VNC frame.
+        """
+        if IS_WINDOWS or os.environ.get("DISPLAY"):
+            return
+        current_uid = os.getuid() if hasattr(os, "getuid") else None
+        our_pid = os.getpid()
+        for process_name in ("fluxbox", "openbox"):
+            for pid in list_pids_by_name(process_name):
+                if pid == our_pid:
+                    continue
+                uid = process_uid(pid)
+                if current_uid is not None and uid is not None and uid != current_uid:
+                    continue
+                target = ""
+                try:
+                    raw = Path(f"/proc/{int(pid)}/environ").read_bytes()
+                    for item in raw.split(b"\x00"):
+                        if item.startswith(b"DISPLAY="):
+                            target = item.split(b"=", 1)[1].decode("utf-8", errors="ignore").strip()
+                            break
+                except Exception:
+                    target = ""
+                if target and target.split(".")[0] != display.split(".")[0]:
+                    continue
+                try:
+                    kill_pid_tree(pid)
+                    self.manager._log(
+                        f"[qq] 已停止占用 {display} 的旧窗口管理器 {process_name}(pid={pid})"
+                    )
+                except Exception:
+                    pass
 
     def _pick_free_display(self, preferred: str) -> str:
         """Find a display whose lock/socket is not held by another user."""
@@ -420,7 +489,7 @@ class QQManager:
                 # immediately spawning a competing server on the same display.
                 self.manager._log(f"[qq] 复用已有虚拟显示 {display}")
             else:
-                xvfb = shutil.which("Xvfb")
+                xvfb = find_binary("Xvfb")
                 if not xvfb:
                     self.manager._log(
                         "[qq] [warn] 未安装 Xvfb，无法创建虚拟显示；可点「安装 Linux 依赖」",
@@ -472,11 +541,29 @@ class QQManager:
             return display
 
         env = {**os.environ, "DISPLAY": display}
-        if self._openbox_proc is None or self._openbox_proc.poll() is not None:
-            # SnowLuma's manual Linux guide uses fluxbox specifically; openbox
-            # is only a fallback. Without a real WM the QQ login dialog often
-            # never gets mapped, which is exactly a black VNC screen.
-            wm = shutil.which("fluxbox") or shutil.which("openbox")
+        # SnowLuma's manual Linux guide uses fluxbox specifically; openbox is
+        # only a fallback. Without a real WM the QQ login dialog often never
+        # gets mapped, which is exactly a black VNC screen. If fluxbox was
+        # installed while we were already running openbox, switch immediately.
+        fluxbox = find_binary("fluxbox")
+        wm = fluxbox or find_binary("openbox")
+        running_wm = self._openbox_proc is not None and self._openbox_proc.poll() is None
+        if running_wm and wm and Path(wm).name != (self._wm_name or ""):
+            self.manager._log(
+                f"[qq] 检测到 {Path(wm).name}，切换当前窗口管理器（原 {self._wm_name or '未知'}）"
+            )
+            try:
+                self._openbox_proc.terminate()
+                self._openbox_proc.wait(timeout=2)
+            except Exception:
+                try:
+                    self._openbox_proc.kill()
+                except Exception:
+                    pass
+            self._openbox_proc = None
+            running_wm = False
+        if not running_wm:
+            self._stop_stale_window_managers(display)
             if wm and Path(wm).name != "fluxbox":
                 self.manager._log(
                     "[qq] [warn] 未安装 fluxbox，暂用 openbox；QQ 登录窗口可能无法映射，"
@@ -485,14 +572,41 @@ class QQManager:
                 )
             if wm:
                 try:
-                    self._openbox_proc = subprocess.Popen(
-                        [wm],
-                        env=env,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
-                    )
-                    self.manager._log(f"[qq] 已启动窗口管理器 {Path(wm).name}: {display}")
+                    wm_log = self.manager.persistent_dir / "window-manager.log"
+                    wm_log.parent.mkdir(parents=True, exist_ok=True)
+                    with open(wm_log, "ab") as log:
+                        self._openbox_proc = subprocess.Popen(
+                            [wm],
+                            env=env,
+                            stdout=log,
+                            stderr=log,
+                            start_new_session=True,
+                        )
+                    time.sleep(0.6)
+                    if self._openbox_proc.poll() is not None:
+                        tail = self._tail_log(wm_log, 300)
+                        self.manager._log(
+                            f"[qq] [warn] 窗口管理器 {Path(wm).name} 立即退出"
+                            f"（code={self._openbox_proc.returncode}）: {tail or '无输出'}",
+                            "warning",
+                        )
+                        self._openbox_proc = None
+                        fallback = find_binary("openbox") if Path(wm).name == "fluxbox" else None
+                        if fallback:
+                            with open(wm_log, "ab") as log:
+                                self._openbox_proc = subprocess.Popen(
+                                    [fallback],
+                                    env=env,
+                                    stdout=log,
+                                    stderr=log,
+                                    start_new_session=True,
+                                )
+                            wm = fallback
+                    if self._openbox_proc is not None:
+                        self._wm_name = Path(wm).name
+                        self.manager._log(
+                            f"[qq] 已启动窗口管理器 {self._wm_name}: {display}（{wm}）"
+                        )
                 except Exception as exc:
                     self.manager._log(
                         f"[qq] [warn] 启动窗口管理器失败: {shorten(str(exc), 140)}",
@@ -500,7 +614,8 @@ class QQManager:
                     )
             else:
                 self.manager._log(
-                    "[qq] [warn] 未安装 fluxbox/openbox，QQ 窗口可能无法正常显示",
+                    "[qq] [warn] 未安装 fluxbox/openbox，QQ 窗口可能无法正常显示"
+                    f"（PATH={shorten(os.environ.get('PATH', ''), 160)}）",
                     "warning",
                 )
 
@@ -509,7 +624,7 @@ class QQManager:
         except (TypeError, ValueError):
             port = 5900
         if not port_is_open("127.0.0.1", port, timeout=0.2):
-            x11vnc = shutil.which("x11vnc")
+            x11vnc = find_binary("x11vnc")
             if not x11vnc:
                 self.manager._log(
                     "[qq] [warn] 未安装 x11vnc，VNC 不可用；可点「安装 Linux 依赖」",
@@ -605,7 +720,7 @@ class QQManager:
         }
 
     def _image_mean(self, path: Path) -> Optional[float]:
-        identify = shutil.which("identify")
+        identify = find_binary("identify")
         if not identify:
             return None
         try:
@@ -621,7 +736,7 @@ class QQManager:
 
     def _display_has_qq_window(self, display: str) -> bool:
         """Best-effort check that QQ actually mapped a window on this display."""
-        xwininfo = shutil.which("xwininfo")
+        xwininfo = find_binary("xwininfo")
         if not xwininfo:
             self.manager._log(
                 "[qq] [warn] 未安装 xwininfo，无法检查 QQ 窗口；可点「安装 Linux 依赖」",
@@ -675,7 +790,7 @@ class QQManager:
             ),
         ]
         for command, executable in attempts:
-            if not shutil.which(executable):
+            if not find_binary(executable):
                 continue
             try:
                 subprocess.run(
@@ -730,7 +845,7 @@ class QQManager:
         path = self.manager.persistent_dir / "qq-login.png"
         captured = await asyncio.to_thread(self._capture_display, display, path)
         if not captured:
-            tools = [name for name in ("scrot", "import", "ffmpeg") if shutil.which(name)]
+            tools = [name for name in ("scrot", "import", "ffmpeg") if find_binary(name)]
             if not tools:
                 message = "未找到截图工具 scrot / import / ffmpeg，请点「安装 Linux 依赖」。"
             else:
@@ -792,6 +907,7 @@ class QQManager:
         self._vnc_proc = None
         self._openbox_proc = None
         self._xvfb_proc = None
+        self._wm_name = ""
 
     def cleanup_displays(self) -> List[int]:
         """Reap Xvfb/x11vnc processes for the plugin's virtual displays.
@@ -909,12 +1025,14 @@ class QQManager:
             launch_env["XDG_SESSION_TYPE"] = "x11"
             launch_env.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
             launch_env.setdefault("QT_X11_NO_MITSHM", "1")
+            launch_env.setdefault("NO_AT_BRIDGE", "1")
             try:
                 runtime_dir = Path(f"/tmp/runtime-{os.getuid()}")
                 runtime_dir.mkdir(mode=0o700, exist_ok=True)
                 launch_env["XDG_RUNTIME_DIR"] = str(runtime_dir)
             except Exception:
                 pass
+            await asyncio.to_thread(self._ensure_session_bus, launch_env)
         try:
             if IS_WINDOWS:
                 subprocess.Popen(
@@ -967,6 +1085,16 @@ class QQManager:
                     # whole Electron tree, but only report the real client.
                     self.launched_pids.update(after_all - before_all)
                     self.manager._log(f"[qq] 检测到 QQ 主进程: {sorted(new_main)}")
+                    if display:
+                        await asyncio.sleep(2)
+                        if await asyncio.to_thread(self._display_has_qq_window, display):
+                            self.manager._log(f"[qq] {display} 已检测到 QQ 窗口，可以扫码登录")
+                        else:
+                            self.manager._log(
+                                "[qq] [warn] QQ 主进程已启动，但 "
+                                f"{display} 上仍未出现窗口；请查看 window-manager.log 与 xvfb.log",
+                                "warning",
+                            )
                     return {"ok": True, "pids": sorted(new_main), "message": "QQ 已启动"}
             self.launched_pids.update(set(running_qq_pids()) - before_all)
             return {
@@ -979,6 +1107,37 @@ class QQManager:
             return {"ok": False, "message": f"启动 QQ 失败: {shorten(str(e), 160)}"}
         finally:
             self._launching = False
+
+    def _ensure_session_bus(self, env: Dict[str, str]) -> None:
+        """Give QQ a private D-Bus session on headless hosts.
+
+        Electron/Qt fall back to a degraded mode (or hang before mapping a
+        window) when no session bus exists. ``dbus-x11`` is part of SnowLuma's
+        documented dependency list for exactly this reason.
+        """
+        if env.get("DBUS_SESSION_BUS_ADDRESS"):
+            return
+        dbus = find_binary("dbus-daemon")
+        if not dbus:
+            return
+        try:
+            result = subprocess.run(
+                [dbus, "--session", "--fork", "--print-address=1"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            address = ""
+            for line in (result.stdout or "").splitlines():
+                line = line.strip()
+                if line.startswith("unix:"):
+                    address = line
+                    break
+            if address:
+                env["DBUS_SESSION_BUS_ADDRESS"] = address
+                self.manager._log("[qq] 已创建独立 D-Bus 会话")
+        except Exception:
+            pass
 
     def stop_launched(self) -> Dict[str, Any]:
         """Terminate only the QQ processes this plugin started."""

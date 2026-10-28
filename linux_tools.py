@@ -11,13 +11,38 @@ from typing import Any, Dict, List, Tuple
 from .utils import IS_LINUX, decrypt_secret, shorten
 
 
+_BIN_DIRS = (
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/local/sbin",
+    "/usr/sbin",
+    "/sbin",
+    "/snap/bin",
+)
+
+
+def have_binary(name: str) -> bool:
+    """Check for a binary even when the service ``PATH`` is minimal."""
+    if shutil.which(name):
+        return True
+    for base in _BIN_DIRS:
+        candidate = Path(base) / name
+        try:
+            if candidate.is_file() and os.access(str(candidate), os.X_OK):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def sudo_password(plugin: Any) -> str:
     raw = str(plugin.config.get("sudo_password", "") or "")
     return decrypt_secret(raw) if raw else ""
 
 
 def sudo_available() -> bool:
-    return bool(shutil.which("sudo"))
+    return have_binary("sudo")
 
 
 async def run_sudo(plugin: Any, args: List[str], timeout: float = 180.0) -> Tuple[int, str]:
@@ -143,7 +168,7 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
         return {"ok": False, "message": "该操作仅支持 Linux"}
     if not sudo_password(plugin):
         return {"ok": False, "message": "请先在配置里填写 sudo 密码"}
-    apt = shutil.which("apt-get")
+    apt = shutil.which("apt-get") or ("/usr/bin/apt-get" if have_binary("apt-get") else None)
     if not apt:
         return {"ok": False, "message": "未找到 apt-get（仅支持 Debian / Ubuntu）"}
 
@@ -183,11 +208,11 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
     missing = [
         name
         for name in ("Xvfb", "x11vnc", "xwininfo")
-        if not shutil.which(name)
+        if not have_binary(name)
     ]
-    if not shutil.which("fluxbox"):
+    if not have_binary("fluxbox"):
         missing.append("fluxbox")
-    if not any(shutil.which(name) for name in ("scrot", "import", "ffmpeg")):
+    if not any(have_binary(name) for name in ("scrot", "import", "ffmpeg")):
         missing.append("scrot/imagemagick")
     if missing:
         steps.append(
