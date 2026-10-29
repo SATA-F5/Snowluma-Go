@@ -1,4 +1,4 @@
-"""Snowluma Go — AstrBot plugin entry point.
+﻿"""Snowluma Go — AstrBot plugin entry point.
 
 The plugin is a small operator console around SnowLuma:
 
@@ -12,6 +12,7 @@ The plugin is a small operator console around SnowLuma:
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import shutil
 import webbrowser
@@ -51,7 +52,13 @@ PLUGIN_CODE_VERSION = "1.0.2"
 
 # Bump together with ONBOARD_VERSION in bridge.js so upgraded users get the
 # refreshed guide exactly once.
-ONBOARD_CONFIG_VERSION = 2
+ONBOARD_CONFIG_VERSION = 3
+
+# Whitelisted onboarding images (name -> mime). Served via /guide/asset so the
+# page never depends on static asset routing or platform path separators.
+GUIDE_ASSETS = {
+    "astbot-create-bot.png": "image/png",
+}
 
 # Stored encrypted at rest and never returned by the config API.
 SECRET_KEYS = ("webui_password", "sudo_password", "vnc_password")
@@ -139,6 +146,7 @@ class SnowLumaGoPlugin(Star):
             ("hook/unload", self.api_hook_unload, ["POST"], "卸载指定 QQ 进程"),
             ("onboarding/done", self.api_onboarding_done, ["POST"], "完成引导"),
             ("download/options", self.api_save_download_options, ["POST"], "保存下载设置"),
+            ("guide/asset", self.api_guide_asset, ["GET"], "读取引导图片"),
             ("update/check", self.api_update_check, ["GET"], "检查 SnowLuma 更新"),
         ]
         for path, handler, methods, desc in routes:
@@ -635,6 +643,32 @@ class SnowLumaGoPlugin(Star):
             self._save_config(self.config)
             self.manager._snapshot_ts = 0.0
         return json_response({"ok": True, "message": "下载设置已生效", "options": changed})
+
+    async def api_guide_asset(self):
+        """Serve onboarding images as base64.
+
+        AstrBot mounts plugin pages differently across versions and platforms
+        (and relative ``assets/`` URLs break when the page has no trailing
+        slash), so the guide never relies on static file routing.
+        """
+        name = str(request.query.get("name", "") or "").strip()
+        if name not in GUIDE_ASSETS:
+            return error_response("不支持的引导图片")
+        path = Path(__file__).resolve().parent / "pages" / "snowluma_go" / "assets" / name
+        try:
+            payload = path.read_bytes()
+            if len(payload) > 4 * 1024 * 1024:
+                return error_response("引导图片过大")
+        except Exception as exc:
+            return error_response(f"读取引导图片失败: {shorten(str(exc), 160)}")
+        return json_response(
+            {
+                "ok": True,
+                "name": name,
+                "mime": GUIDE_ASSETS[name],
+                "data": base64.b64encode(payload).decode("ascii"),
+            }
+        )
 
     async def api_onboarding_done(self):
         self.config["onboarding_done"] = True

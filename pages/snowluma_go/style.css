@@ -696,7 +696,25 @@
             opacity: 0;
             transition: opacity 0.35s ease;
         }
-        #onboarding.with-backdrop .ob-backdrop { opacity: 1; }
+        #onboarding.with-backdrop .ob-backdrop {
+            opacity: 1;
+            animation: obBackdropIn 0.3s ease both;
+        }
+        @keyframes obBackdropIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Step content animates on every render, so switching steps feels alive
+           without touching the absolutely positioned card itself. */
+        .ob-body {
+            animation: obBodyIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        }
+        @keyframes obBodyIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .ob-shot.missing { display: none; }
 
         .ob-spotlight {
             position: absolute;

@@ -1,4 +1,4 @@
-/* SnowLuma Go — plugin page controller (NapCat_Go console style). */
+﻿/* SnowLuma Go — plugin page controller (NapCat_Go console style). */
 (function () {
     "use strict";
 
@@ -6,8 +6,8 @@
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const CHANNEL = "astrbot-plugin-page";
-    const ONBOARD_KEY = "snowluma_go_onboarded_v2";
-    const ONBOARD_VERSION = 2;
+    const ONBOARD_KEY = "snowluma_go_onboarded_v3";
+    const ONBOARD_VERSION = 3;
     const LOCAL_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0", "[::]", "::"];
     const LOOPBACK_BIND_HOSTS = ["127.0.0.1", "localhost", "::1", "[::1]"];
     const STATUS_INTERVAL = 3000;
@@ -519,7 +519,7 @@
                     "<li>反向 Websocket 主机填 <code>0.0.0.0</code>，端口如 <code>6199</code>；</li>" +
                     "<li>填写一个随机 Token，稍后由插件自动写入 SnowLuma。</li>" +
                     "</ul>" +
-                    '<img class="ob-shot" src="./assets/astbot-create-bot.png" alt="AstrBot 创建机器人">' +
+                    '<img class="ob-shot" alt="AstrBot 创建机器人" data-guide-asset="astbot-create-bot.png">' +
                     '<div class="ob-shot-cap">AstrBot 新建机器人界面（红框为关键填写项）</div>' +
                     '<div class="ob-warn-box">没有可用的 OneBot v11 机器人时，「立即同步」会保持不可用。</div>',
             },
@@ -598,6 +598,42 @@
         return steps;
     }
 
+    const guideAssetCache = {};
+
+    async function guideAssetUrl(name) {
+        if (guideAssetCache[name]) return guideAssetCache[name];
+        try {
+            const data = await apiGet("guide/asset", { name: name });
+            if (data && data.ok && data.data) {
+                guideAssetCache[name] = "data:" + (data.mime || "image/png") + ";base64," + data.data;
+                return guideAssetCache[name];
+            }
+        } catch (error) {
+            /* static fallback below */
+        }
+        // Last resort: relative path next to the page (works on hosts that
+        // serve plugin-page assets directly).
+        return "./assets/" + name;
+    }
+
+    async function hydrateGuideAssets(root) {
+        const images = root.querySelectorAll("img[data-guide-asset]");
+        for (const img of images) {
+            const name = img.dataset.guideAsset;
+            if (!name || img.dataset.loaded) continue;
+            const url = await guideAssetUrl(name);
+            if (url) {
+                img.src = url;
+                img.dataset.loaded = "1";
+            }
+            img.addEventListener(
+                "error",
+                () => img.classList.add("missing"),
+                { once: true }
+            );
+        }
+    }
+
     function startOnboarding() {
         const ob = $("onboarding");
         if (!ob) return;
@@ -617,7 +653,8 @@
 
         const first = index === 0;
         const last = index === steps.length - 1;
-        card.innerHTML = step.html +
+        card.innerHTML = '<div class="ob-body">' +
+            step.html +
             '<div class="ob-dots"><span style="font-size:11px;color:var(--text-muted);font-family:\'Consolas\',monospace;">' +
             (index + 1) + " / " + steps.length + "</span></div>" +
             '<div class="ob-actions">' +
@@ -626,7 +663,10 @@
             (!first ? '<button class="ob-btn" data-ob="prev">上一步</button>' : "") +
             '<button class="ob-btn primary" data-ob="' + (last ? "done" : "next") + '">' +
             (last ? "开始使用" : "下一步") + "</button>" +
-            "</div></div>";
+            "</div></div>" +
+            "</div>";
+
+        hydrateGuideAssets(card);
 
         if (step.type === "backdrop") {
             ob.classList.remove("with-spotlight");
