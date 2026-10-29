@@ -191,13 +191,15 @@ QQ 配置目录被其他用户（通常是 root）占用，QQ 会在创建日志
 
 现在启动 QQ / 启动 SnowLuma 前会自动检测 `~/.config/QQ` 是否可写，需要时弹窗索取 sudo 密码并自动 `chown/chmod`。也可以手动点 **修复 QQ 权限**。
 
-### 日志出现 `EACCES ... /proc/<pid>/environ`
+### Hook 报 `COMPONENT_LOAD_FAILED` / `EACCES ... /proc/<pid>/environ`
 
 SnowLuma 通过 ptrace 注入 QQ，被 Yama 或权限策略拦住了。
 
-1. 点 **修复 QQ 权限**，按弹窗输入 **sudo 密码**（仅本次使用）
-2. 该操作会修正 QQ 配置属主、设置 `kernel.yama.ptrace_scope=0`、给 Node 授予 `cap_sys_ptrace`
+1. 启动 SnowLuma 或 启动 QQ 时会自动检测 `kernel.yama.ptrace_scope`，按弹窗输入 **sudo 密码**（仅本次使用）
+2. 也可以手动点 **修复 QQ 权限**（会修正 QQ 配置属主、设置 `kernel.yama.ptrace_scope=0`、给 Node 授予 `cap_sys_ptrace`）
 3. **重启 SnowLuma**，再重新挂载 QQ
+
+如果 QQ 进程是以前用 root 启动的，先点 **清理 QQ 进程**（会再询问 sudo 密码），再重新启动 QQ。
 
 ### VNC 连不上
 

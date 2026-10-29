@@ -377,7 +377,7 @@ class SnowLumaGoPlugin(Star):
         if sudo_err:
             return error_response(sudo_err)
         if IS_LINUX:
-            pre = await self.manager.qq.prepare_qq_environment(password)
+            pre = await self.manager.qq.auto_repair_napcat_entry(password)
             if pre.get("need_sudo"):
                 return json_response(
                     {"ok": False, "need_sudo": True, "message": pre.get("message")}
@@ -398,7 +398,7 @@ class SnowLumaGoPlugin(Star):
         if sudo_err:
             return error_response(sudo_err)
         if IS_LINUX:
-            pre = await self.manager.qq.prepare_qq_environment(password)
+            pre = await self.manager.qq.auto_repair_napcat_entry(password)
             if pre.get("need_sudo"):
                 return json_response(
                     {"ok": False, "need_sudo": True, "message": pre.get("message")}

@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from astrbot.api import logger
 
-from .linux_tools import run_sudo
+from .linux_tools import fix_qq_permissions, run_sudo
 from .utils import (
     CREATE_NO_WINDOW,
     IS_WINDOWS,
@@ -1106,63 +1106,71 @@ class QQManager:
         except Exception:
             return False
 
-    async def _ensure_qq_config_writable(self, password: str) -> Dict[str, Any]:
-        """Fix a root-owned ``~/.config/QQ`` so QQ stops failing with EACCES."""
-        if IS_WINDOWS or self.qq_config_writable():
-            return {"ok": True, "skipped": True}
-        config = Path.home() / ".config" / "QQ"
-        if not password:
-            self.manager._log(
-                f"[qq] [warn] QQ 配置目录不可写（{config}），QQ 会以 "
-                "`EACCES: permission denied, mkdir .../QQ/log` 退出",
-                "warning",
-            )
-            return {
-                "ok": False,
-                "need_sudo": True,
-                "message": "QQ 配置目录不可写，需要 sudo 密码修复权限",
-            }
-        if not config.exists():
-            return {
-                "ok": False,
-                "message": f"QQ 配置目录不存在且无法创建: {config}",
-            }
-        uid = os.getuid() if hasattr(os, "getuid") else 0
-        gid = os.getgid() if hasattr(os, "getgid") else 0
-        for args in (
-            ["chown", "-R", f"{uid}:{gid}", str(config)],
-            ["chmod", "-R", "u+rwX", str(config)],
-        ):
-            code, output = await run_sudo(self.manager.plugin, args, password)
-            if code != 0:
-                return {
-                    "ok": False,
-                    "message": f"修复 QQ 配置目录权限失败: {shorten(output, 180)}",
-                }
+    def ptrace_scope(self) -> int:
+        """Current Yama ptrace scope (0 = SnowLuma can attach to QQ)."""
+        if IS_WINDOWS:
+            return 0
+        try:
+            return int(Path("/proc/sys/kernel/yama/ptrace_scope").read_text().strip())
+        except Exception:
+            return 0
+
+    def _qq_env_problems(self) -> List[str]:
+        problems: List[str] = []
         if not self.qq_config_writable():
-            return {
-                "ok": False,
-                "message": "QQ 配置目录仍不可写，请检查 ~/.config/QQ 的所有者",
-            }
-        self.manager._log(f"[qq] 已修复 QQ 配置目录权限: {config}")
-        return {"ok": True, "message": "已修复 QQ 配置目录权限"}
+            problems.append("~/.config/QQ 不可写")
+        scope = self.ptrace_scope()
+        if scope > 0:
+            problems.append(f"kernel.yama.ptrace_scope={scope}")
+        return problems
 
     async def prepare_qq_environment(self, password: str = "") -> Dict[str, Any]:
-        """Pre-launch fixes: NapCat injection and an unwritable QQ config dir."""
+        """Pre-launch fixes: NapCat injection, QQ config perms and ptrace.
+
+        All three make QQ die before mapping a window (or make SnowLuma's hook
+        fail with COMPONENT_LOAD_FAILED), so they are checked before every
+        start; the WebUI supplies the sudo password when one is needed.
+        """
         if IS_WINDOWS:
             return {"ok": True, "skipped": True}
         napcat = await self.auto_repair_napcat_entry(password)
         if napcat.get("need_sudo") or not napcat.get("ok"):
             return napcat
-        config = await self._ensure_qq_config_writable(password)
-        if config.get("need_sudo") or not config.get("ok"):
-            return config
-        repaired = not napcat.get("skipped") or not config.get("skipped")
-        return {
-            "ok": True,
-            "skipped": not repaired,
-            "message": napcat.get("message") or config.get("message") or "",
-        }
+
+        problems = self._qq_env_problems()
+        if not problems:
+            return {
+                "ok": True,
+                "skipped": napcat.get("skipped", True),
+                "message": napcat.get("message") or "",
+            }
+        reason = "，".join(problems)
+        if not password:
+            self.manager._log(
+                f"[qq] [warn] QQ 启动环境需要修复：{reason}；需要 sudo 密码",
+                "warning",
+            )
+            return {
+                "ok": False,
+                "need_sudo": True,
+                "message": "需要 sudo 密码修复：" + reason,
+            }
+
+        # fix_qq_permissions covers chown/chmod of ~/.config/QQ, ptrace_scope
+        # and setcap on the SnowLuma node binary in one pass.
+        fixed = await fix_qq_permissions(self.manager.plugin, password)
+        if not fixed.get("ok"):
+            self.manager._log(
+                f"[qq] [warn] 部分权限修复失败: {fixed.get('message')}", "warning"
+            )
+        remaining = self._qq_env_problems()
+        if remaining:
+            return {
+                "ok": False,
+                "message": "权限修复未完成：" + "，".join(remaining),
+            }
+        self.manager._log(f"[qq] 已修复 QQ 启动环境：{reason}")
+        return {"ok": True, "skipped": False, "message": "已修复 QQ 启动环境"}
 
     async def auto_repair_napcat_entry(self, password: str = "") -> Dict[str, Any]:
         """Detect and undo a NapCat injection that hides QQ's login window.
