@@ -17,6 +17,8 @@
 - 启动 QQ 前检测 `~/.config/QQ` 是否可写：目录被 root 占用时 QQ 会以 `EACCES ... mkdir .../QQ/log` 退出，现在会向 WebUI 索取 sudo 密码并自动 `chown/chmod` 修复
 - 启动前同时检查 `kernel.yama.ptrace_scope`：非 0 时会在启动 SnowLuma / QQ 前索取 sudo 密码，自动执行 chown、`ptrace_scope=0` 与 `setcap cap_sys_ptrace=ep`，避免 Hook 报 `COMPONENT_LOAD_FAILED`
 - 启动 SnowLuma 前会清理同一安装目录下遗留的 node 进程，避免旧实例占着 5099 导致新实例改用 5100、同时存在两个 hook
+- 状态区新增「QQ 启动环境需要修复」提示与「修复并启动 QQ」按钮；插件版本变化时页面会自动带版本参数重载，避免浏览器缓存旧脚本
+- `bridge.js` / `style.css` / `extra.css` 引用加版本参数；sudo 弹窗缺失时回退到浏览器原生输入框
 - x11vnc 不再使用 `-quiet`，改用 `-o` 记录完整日志；启动失败时会打印 DISPLAY、端口和错误输出
 - 修复引导里的 AstrBot 截图无法显示：改为通过 `guide/asset` 接口按插件目录读取并转成 data URI，避免依赖插件页的静态资源路由与路径分隔符
 - 恢复引导动画：每一步内容淡入 + 上移，遮罩淡入

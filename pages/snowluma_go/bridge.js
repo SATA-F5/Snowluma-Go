@@ -247,6 +247,24 @@
     function promptSudo(reason) {
         return new Promise((resolve) => {
             const modal = $("sudo-modal");
+            if (!modal) {
+                // Older cached page: still allow the operation via a native
+                // prompt instead of silently doing nothing.
+                const password = window.prompt(
+                    (reason || "该操作需要 sudo 权限") + "\n\n请输入 sudo 密码（仅本次使用）："
+                );
+                if (!password) {
+                    resolve(null);
+                    return;
+                }
+                encryptSudo(password)
+                    .then(resolve)
+                    .catch((error) => {
+                        toast("加密失败：" + (error.message || error), "err", 4000);
+                        resolve(null);
+                    });
+                return;
+            }
             const input = $("sudo-password-input");
             const okBtn = $("btn-sudo-ok");
             const cancelBtn = $("btn-sudo-cancel");
@@ -341,6 +359,7 @@
     }
 
     function render(status) {
+        maybeReloadForVersion(status);
         renderHeader(status);
         renderStatusGrid(status);
         renderAccounts(status);
@@ -348,6 +367,25 @@
         renderGuide(status);
         renderDownload(status);
         renderAuxButtons(status);
+    }
+
+    function maybeReloadForVersion(status) {
+        const version = status && status.plugin && status.plugin.code_version;
+        if (!version) return;
+        try {
+            const key = "snowluma_go_page_version";
+            const seen = localStorage.getItem(key);
+            if (!seen) {
+                localStorage.setItem(key, version);
+                return;
+            }
+            if (seen !== version) {
+                localStorage.setItem(key, version);
+                const url = new URL(window.location.href);
+                url.searchParams.set("v", version);
+                window.location.replace(url.toString());
+            }
+        } catch (error) { /* ignore */ }
     }
 
     function renderHeader(status) {
@@ -529,7 +567,14 @@
         const parts = [];
         let kind = "";
 
-        if (status.consent_required) {
+        if ((status.qq_env || []).length) {
+            kind = "warn";
+            parts.push("<strong>QQ 启动环境需要修复</strong><br>" +
+                esc(status.qq_env.join("、")) +
+                "<br>点击「修复并启动 QQ」，在弹窗里输入 sudo 密码即可自动修复。");
+            parts.push('<div class="guide-actions">' +
+                '<button class="btn btn-sm btn-primary" data-action="start-qq-sudo">修复并启动 QQ</button></div>');
+        } else if (status.consent_required) {
             kind = "warn";
             parts.push("<strong>需要同意 SnowLuma 协议</strong><br>SnowLuma 要求先确认用户协议与隐私政策，之后才能读写 OneBot 配置。");
             parts.push('<div class="guide-actions">' +
@@ -1776,6 +1821,7 @@
             if (!target) return;
             const action = target.dataset.action;
             if (action === "sync") { actionSync(); return; }
+            if (action === "start-qq-sudo") { actionStartQQ(); return; }
             if (action === "hook-load") { actionHook(Number(target.dataset.pid || 0), "load"); return; }
             if (action === "hook-unload") { actionHook(Number(target.dataset.pid || 0), "unload"); return; }
             if (action === "open-webui") { openWebUIModal(); return; }

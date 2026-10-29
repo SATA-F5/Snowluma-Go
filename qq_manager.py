@@ -1115,6 +1115,27 @@ class QQManager:
         except Exception:
             return 0
 
+    def qq_env_status(self) -> List[str]:
+        """Cheap, side-effect-free version of ``_qq_env_problems`` for status."""
+        if IS_WINDOWS:
+            return []
+        problems: List[str] = []
+        config = Path.home() / ".config" / "QQ"
+        log_dir = config / "log"
+        target = log_dir if log_dir.exists() else config
+        try:
+            if target.exists():
+                if not os.access(str(target), os.W_OK):
+                    problems.append("~/.config/QQ 不可写")
+            elif not os.access(str(config.parent), os.W_OK):
+                problems.append("~/.config 不可写")
+        except Exception:
+            problems.append("~/.config/QQ 不可写")
+        scope = self.ptrace_scope()
+        if scope > 0:
+            problems.append(f"kernel.yama.ptrace_scope={scope}")
+        return problems
+
     def _qq_env_problems(self) -> List[str]:
         problems: List[str] = []
         if not self.qq_config_writable():

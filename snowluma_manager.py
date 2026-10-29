@@ -1104,6 +1104,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
             "connections": connections,
             "qq_processes": processes,
             "qq": qq_info,
+            "qq_env": self.qq.qq_env_status(),
             "download": dict(self.download_state),
             "log_count": len(self.log_lines),
             "last_error": self.last_error,
