@@ -33,7 +33,7 @@
 - 强制 QQ 使用 X11（`QT_QPA_PLATFORM=xcb`、清理 `WAYLAND_DISPLAY`），并记录 openbox / xwininfo 状态，修复 Qt 窗口不显示导致的黑屏
 - Linux 下启动 QQ 增加 `--no-sandbox --disable-gpu --disable-software-rasterizer --disable-gpu-compositing --disable-dev-shm-usage --ozone-platform=x11`，并补齐 XDG_RUNTIME_DIR / 软件渲染环境，避免进程存在但不映射窗口
 - 依赖检查现在要求必须安装 fluxbox；只回退 openbox 时日志会明确警告，避免“看起来启动成功但二维码一直黑屏”
-- 对齐 SnowLuma 官方无头部署：优先使用 fluxbox、Xvfb 1920x1080x16，安装 dbus-x11 / libcap2-bin
+- 对齐 SnowLuma 官方无头部署：优先使用 fluxbox、Xvfb 800x600x16，安装 dbus-x11 / libcap2-bin
 - 「修复 QQ 权限」会额外 `setcap cap_sys_ptrace=ep` 到 SnowLuma 的 node，兼容 Yama / 容器环境
 - 配置 sudo 密码时，启动 QQ 会自动修正 `ptrace_scope`；窗口检查失败会打印当前 X11 窗口树，方便定位黑屏
 - 修复服务进程 `PATH` 精简导致 `which fluxbox` 找不到 `/usr/bin/fluxbox`、从而一直回退 openbox 的问题：改为同时搜索 `/usr/bin` 等标准目录，并在日志里打印实际使用的窗口管理器路径
@@ -53,6 +53,11 @@
 - 检测并修复被 NapCat 补丁接管的 QQ 启动入口（`resources/app/package.json` 的 `main` 被改成 `loadNapCat.js`）：NapCat 数据目录被删除后，该加载器会抛 `ERR_MODULE_NOT_FOUND`，QQ 因此完全不创建登录窗口
 - 「修复 QQ 登录界面」会通过 sudo 备份 `package.json` 并恢复原始入口，同时禁用 `loadNapCat.js`
 - 启动 QQ 时清除继承的 `NAPCAT_BOOTMAIN` 环境变量，诊断信息中显示当前 `main` 入口
+- 新增独立的「下载与安装」页面：版本、发行包、下载镜像都移到这里，从「配置 → 维护与帮助」进入
+- 下载镜像、版本与发行包的选择**实时保存**（专用接口 `download/options`），不需要再点保存配置
+- 安装流程在下载完成后自动检测 Linux 依赖（Xvfb / x11vnc / fluxbox / xwininfo / scrot）；缺少时自动安装，未配置 sudo 密码时直接报错并跳过安装
+- Xvfb 虚拟屏幕改为 `800x600`，截图与 VNC 更贴近 QQ 登录窗口尺寸
+- 优化控制台布局：三个主按钮等宽一行、日志列吸顶、状态卡改为自适应网格、QQ 操作按钮网格化
 
 ## 1.0.0
 

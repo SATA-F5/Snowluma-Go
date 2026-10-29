@@ -222,7 +222,7 @@
     function isDownloading(status) {
         const d = (status && status.download) || {};
         if (d.downloading) return true;
-        return ["resolving", "downloading", "verifying", "extracting", "installing"].includes(d.phase);
+        return ["resolving", "downloading", "verifying", "deps", "extracting", "installing"].includes(d.phase);
     }
 
     function render(status) {
@@ -422,7 +422,7 @@
                 '<button class="btn btn-sm btn-primary" data-action="accept-agreements">我同意</button></div>');
         } else if (!status.installed) {
             kind = "warn";
-            parts.push("<strong>尚未安装 SnowLuma</strong><br>打开「配置」→「版本与安装」，点「安装 / 更新」选择 full 发行包即可自动下载并部署。");
+            parts.push("<strong>尚未安装 SnowLuma</strong><br>打开「配置 → 维护与帮助 → 下载与安装」，选择版本与镜像后点「安装 / 更新」即可自动下载并部署。");
         } else if (status.last_error) {
             kind = "error";
             parts.push("<strong>最近错误</strong><br>" + esc(shorten(status.last_error, 300)));
@@ -475,7 +475,8 @@
         $("btn-restart").disabled = !installed || S.busy.has("restart");
         $("btn-cleanup").disabled = S.busy.has("cleanup");
         $("btn-qq-cleanup").disabled = S.busy.has("qq-cleanup");
-        $("btn-install").disabled = isDownloading(status);
+        const dlInstall = $("btn-dl-install");
+        if (dlInstall) dlInstall.disabled = isDownloading(status) || S.busy.has("install");
         $("btn-open-webui").disabled = !(running && status.webui_url);
         $("btn-qq-login").disabled = !(status.qq && status.qq.installed) || S.busy.has("qq-qr");
         $("btn-fix-linux").disabled = S.busy.has("linux-fix");
@@ -513,7 +514,7 @@
                 type: "backdrop",
                 html: '<span class="ob-step-badge">前置 2 / 3</span>' +
                     "<h3>安装 SnowLuma</h3>" +
-                    "<p>点击右上角 <b>配置</b>，在「版本与安装」里点 <b>安装 / 更新</b>：</p>" +
+                    "<p>点击右上角 <b>配置</b> → <b>维护与帮助</b> → <b>下载与安装</b>，选好版本后点 <b>安装 / 更新</b>：</p>" +
                     "<ul>" +
                     "<li>优先选 <code>full</code> 发行包，自带 Node，无需额外环境；</li>" +
                     "<li>下载走 GitHub，失败会自动切换镜像；</li>" +
@@ -539,7 +540,7 @@
             ["btn-sync", "立即同步", "把 AstrBot 的 OneBot v11 反向 WS 写入 SnowLuma。需要账号在线且已同意协议；按钮灰色表示条件未满足。"],
             ["btn-open-webui", "打开 WebUI", "弹出自定义面板，可打开 WebUI、复制自动适配后的地址与密码。"],
             ["s-run", "运行状态", "SnowLuma 是否在运行以及进程 PID。"],
-            ["s-version", "版本", "当前安装的 SnowLuma 版本号；显示「未安装」时先到配置里安装。"],
+            ["s-version", "版本", "当前安装的 SnowLuma 版本号；显示「未安装」时先在「下载与安装」里安装。"],
             ["s-mode", "运行方式", "auto / native / external；external 表示接管已有 SnowLuma，不下载也不拉起进程。"],
             ["s-webui", "WebUI 地址", "当前 SnowLuma WebUI 的访问地址。"],
             ["s-login", "登录状态", "插件与 SnowLuma WebUI 的会话状态；显示「待同意协议」时先点页面里的我同意。"],
@@ -556,7 +557,7 @@
             ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会在 Xvfb 虚拟显示中启动。"],
             ["btn-qq-login", "QQ 登录", "无桌面服务器可直接在这里查看 QQ 登录二维码并扫码。"],
             ["btn-hook-all", "全部挂载", "让 SnowLuma 挂载所有可用的 QQ 进程。"],
-            ["btn-open-config", "配置", "安装、更新或卸载 SnowLuma，修改下载镜像与自动化选项。"],
+            ["btn-open-config", "配置", "修改运行方式、账号、VNC、自动化等选项；安装与下载镜像在「维护与帮助 → 下载与安装」。"],
             ["log-container", "实时日志", "插件与 SnowLuma 的运行日志，出错时先看这里。"],
         ];
         tour.forEach(([target, title, desc], index) => {
@@ -825,7 +826,7 @@
         try {
             const status = S.status || {};
             if (!status.installed) {
-                openConfig(true);
+                openDownload();
                 return;
             }
             if (status.running) {
@@ -1154,7 +1155,7 @@
         try {
             const data = await apiGet("releases", force ? { force: 1 } : undefined);
             S.releases = (data && data.releases) || [];
-            const select = $("cfg-snowluma_version");
+            const select = $("dl-version");
             const previous = select.value;
             const options = ['<option value="latest">latest（最新版）</option>'];
             S.releases.forEach((release) => {
@@ -1173,14 +1174,78 @@
         }
     }
 
+    async function openDownload() {
+        try {
+            const config = await apiGet("config");
+            S.mirrors = Array.isArray(config.download_mirrors) ? config.download_mirrors.slice() : [];
+            $("dl-mirror-input").value = config.download_mirror || "";
+            renderMirrorMenu();
+            setMirrorMenu(false);
+
+            const status = S.status || {};
+            $("dl-current").textContent = status.installed
+                ? "当前已安装 " + (status.installed_version || "未知版本") +
+                    (status.release_flavor ? "（" + status.release_flavor + "）" : "") +
+                    "；可切换版本或重新安装，用户数据会保留。"
+                : "尚未安装 SnowLuma，选择版本后点「安装 / 更新」。";
+
+            $("download-modal").classList.add("visible");
+            if (!S.releases.length) await loadReleases(false);
+            const select = $("dl-version");
+            const configured = config.snowluma_version || "latest";
+            if (Array.from(select.options).some((option) => option.value === configured)) {
+                select.value = configured;
+            }
+            $("dl-flavor").value = config.release_flavor || status.release_flavor || "full";
+            $("btn-dl-uninstall").style.display = status.installed ? "" : "none";
+        } catch (error) {
+            toast("读取下载设置失败：" + error.message, "err", 5000);
+        }
+    }
+
+    function closeDownload() {
+        setMirrorMenu(false);
+        $("download-modal").classList.remove("visible");
+    }
+
+    // Serialize saves instead of dropping them: blur fires before a menu click,
+    // and both must reach the backend so the last choice wins.
+    let downloadOptionsChain = Promise.resolve();
+    function saveDownloadOptions(patch, notify) {
+        downloadOptionsChain = downloadOptionsChain.then(async () => {
+            try {
+                const result = await apiPost("download/options", patch);
+                if (result && result.ok) {
+                    if (notify) toast(notify, "ok", 1600);
+                } else if (result) {
+                    toast(result.message || "保存下载设置失败", "err", 4000);
+                }
+                return result;
+            } catch (error) {
+                toast("保存下载设置失败：" + (error.message || error), "err", 4000);
+                return null;
+            }
+        });
+        return downloadOptionsChain;
+    }
+
+    let mirrorSaveTimer = null;
+    function queueMirrorSave() {
+        clearTimeout(mirrorSaveTimer);
+        mirrorSaveTimer = setTimeout(() => {
+            saveDownloadOptions({ download_mirror: $("dl-mirror-input").value.trim() });
+        }, 700);
+    }
+
     async function actionInstall() {
-        const version = $("cfg-snowluma_version").value || "latest";
-        const flavor = $("cfg-release_flavor").value || "full";
+        const version = $("dl-version").value || "latest";
+        const flavor = $("dl-flavor").value || "full";
         const message = S.status && S.status.installed
             ? "将安装 " + version + "（" + flavor + "）包，程序文件会被替换，用户数据保留。继续？"
             : "将下载并安装 SnowLuma " + version + "（" + flavor + "）包。继续？";
         if (!(await confirmDialog(message, "开始安装"))) return;
-        closeConfig();
+        await saveDownloadOptions({ snowluma_version: version, release_flavor: flavor });
+        closeDownload();
         const result = await run("install", () => apiPost("install", { version: version, flavor: flavor }));
         if (result) toast(result.message || (result.ok ? "安装完成" : "安装失败"), result.ok ? "ok" : "err", 5000);
         refreshStatus();
@@ -1203,9 +1268,6 @@
         ["webui_bind_host", "value"],
         ["external_host", "value"],
         ["external_port", "number"],
-        ["snowluma_version", "value"],
-        ["release_flavor", "value"],
-        ["download_mirror", "value"],
         ["qq_number", "value"],
         ["qq_path", "value"],
         ["qq_display", "value"],
@@ -1222,8 +1284,8 @@
     ];
 
     function renderMirrorMenu() {
-        const menu = $("cfg-mirror-menu");
-        const input = $("cfg-download_mirror");
+        const menu = $("dl-mirror-menu");
+        const input = $("dl-mirror-input");
         if (!menu || !input) return;
         const current = input.value.trim();
         const options = [{ value: "", label: "官方 GitHub（不使用镜像）", tag: "官方" }];
@@ -1245,9 +1307,9 @@
     }
 
     function setMirrorMenu(open) {
-        const picker = $("cfg-mirror-picker");
-        const menu = $("cfg-mirror-menu");
-        const toggle = $("cfg-mirror-toggle");
+        const picker = $("dl-mirror-picker");
+        const menu = $("dl-mirror-menu");
+        const toggle = $("dl-mirror-toggle");
         if (!picker || !menu || !toggle) return;
         picker.classList.toggle("open", open);
         menu.classList.toggle("visible", open);
@@ -1257,7 +1319,7 @@
         if (selected) selected.scrollIntoView({ block: "nearest" });
     }
 
-    async function openConfig(scrollToInstall) {
+    async function openConfig() {
         try {
             const config = await apiGet("config");
             CONFIG_FIELDS.forEach(([key, kind]) => {
@@ -1271,22 +1333,7 @@
             $("cfg-webui_password").type = "password";
             $("cfg-sudo_password").value = "";
             $("cfg-vnc_password").value = "";
-            S.mirrors = Array.isArray(config.download_mirrors) ? config.download_mirrors.slice() : [];
-            renderMirrorMenu();
-            setMirrorMenu(false);
             $("config-modal").classList.add("visible");
-            if (!S.releases.length) await loadReleases(false);
-            if (S.status) {
-                // keep the version picker aligned with the running config
-                const select = $("cfg-snowluma_version");
-                const configured = config.snowluma_version || "latest";
-                if (Array.from(select.options).some((option) => option.value === configured)) select.value = configured;
-                $("cfg-release_flavor").value = config.release_flavor || (S.status.release_flavor || "full");
-                $("btn-uninstall").style.display = S.status.installed ? "" : "none";
-            }
-            if (scrollToInstall) {
-                $("install-section").scrollIntoView({ behavior: "smooth", block: "start" });
-            }
         } catch (error) {
             toast("读取配置失败：" + error.message, "err", 5000);
         }
@@ -1371,37 +1418,67 @@
             closeConfig();
             startOnboarding();
         });
-        $("btn-open-config").addEventListener("click", () => openConfig(false));
-        $("cfg-mirror-toggle").addEventListener("click", () => {
-            setMirrorMenu(!$("cfg-mirror-menu").classList.contains("visible"));
+        $("btn-open-config").addEventListener("click", () => openConfig());
+        $("btn-open-download").addEventListener("click", () => {
+            closeConfig();
+            openDownload();
         });
-        $("cfg-download_mirror").addEventListener("focus", () => setMirrorMenu(true));
-        $("cfg-download_mirror").addEventListener("input", renderMirrorMenu);
-        $("cfg-download_mirror").addEventListener("keydown", (event) => {
+        $("btn-dl-close").addEventListener("click", closeDownload);
+        $("btn-dl-install").addEventListener("click", actionInstall);
+        $("btn-dl-uninstall").addEventListener("click", actionUninstall);
+        $("dl-version").addEventListener("change", () => {
+            saveDownloadOptions({ snowluma_version: $("dl-version").value || "latest" });
+        });
+        $("dl-flavor").addEventListener("change", () => {
+            saveDownloadOptions({ release_flavor: $("dl-flavor").value || "full" });
+        });
+        $("dl-mirror-toggle").addEventListener("click", () => {
+            setMirrorMenu(!$("dl-mirror-menu").classList.contains("visible"));
+        });
+        $("dl-mirror-input").addEventListener("focus", () => setMirrorMenu(true));
+        $("dl-mirror-input").addEventListener("input", () => {
+            renderMirrorMenu();
+            queueMirrorSave();
+        });
+        $("dl-mirror-input").addEventListener("blur", () => {
+            clearTimeout(mirrorSaveTimer);
+            saveDownloadOptions({ download_mirror: $("dl-mirror-input").value.trim() });
+        });
+        $("dl-mirror-input").addEventListener("keydown", (event) => {
             if (event.key === "Escape") {
                 setMirrorMenu(false);
-                $("cfg-download_mirror").blur();
+                $("dl-mirror-input").blur();
             } else if (event.key === "ArrowDown") {
                 event.preventDefault();
                 setMirrorMenu(true);
+            } else if (event.key === "Enter") {
+                setMirrorMenu(false);
+                clearTimeout(mirrorSaveTimer);
+                saveDownloadOptions(
+                    { download_mirror: $("dl-mirror-input").value.trim() },
+                    "下载镜像已生效"
+                );
             }
         });
-        $("cfg-mirror-menu").addEventListener("click", (event) => {
+        $("dl-mirror-menu").addEventListener("click", (event) => {
             const option = event.target.closest(".mirror-option");
             if (!option) return;
-            $("cfg-download_mirror").value = option.dataset.mirror || "";
+            $("dl-mirror-input").value = option.dataset.mirror || "";
             renderMirrorMenu();
             setMirrorMenu(false);
+            clearTimeout(mirrorSaveTimer);
+            saveDownloadOptions(
+                { download_mirror: $("dl-mirror-input").value.trim() },
+                "下载镜像已生效"
+            );
         });
         document.addEventListener("click", (event) => {
-            if (!event.target.closest("#cfg-mirror-picker")) setMirrorMenu(false);
+            if (!event.target.closest("#dl-mirror-picker")) setMirrorMenu(false);
         });
         $("btn-config-cancel").addEventListener("click", closeConfig);
         $("btn-config-save").addEventListener("click", saveConfig);
         $("btn-reveal-password").addEventListener("click", revealPassword);
         $("btn-copy-password-modal").addEventListener("click", actionCopyPassword);
-        $("btn-install").addEventListener("click", actionInstall);
-        $("btn-uninstall").addEventListener("click", actionUninstall);
         $("btn-open-webui").addEventListener("click", openWebUIModal);
         $("btn-copy-webui-url").addEventListener("click", actionCopyWebUIUrl);
         $("btn-copy-webui-password").addEventListener("click", actionCopyPassword);

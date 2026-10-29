@@ -134,6 +134,7 @@ class SnowLumaGoPlugin(Star):
             ("hook/load", self.api_hook_load, ["POST"], "挂载指定 QQ 进程"),
             ("hook/unload", self.api_hook_unload, ["POST"], "卸载指定 QQ 进程"),
             ("onboarding/done", self.api_onboarding_done, ["POST"], "完成引导"),
+            ("download/options", self.api_save_download_options, ["POST"], "保存下载设置"),
             ("update/check", self.api_update_check, ["GET"], "检查 SnowLuma 更新"),
         ]
         for path, handler, methods, desc in routes:
@@ -601,6 +602,35 @@ class SnowLumaGoPlugin(Star):
         data["syncer"] = self.syncer.status_dict()
         data["scan"] = self.syncer.scans()
         return json_response({"ok": True, "message": "配置已保存", "status": data})
+
+    async def api_save_download_options(self):
+        """Persist download-time options immediately.
+
+        The download page has no "save" button: picking a mirror (or a
+        version/flavor) must apply to the very next install.
+        """
+        try:
+            payload = await request.json(default={})
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            return error_response("下载设置需要 JSON 对象")
+        changed: Dict[str, Any] = {}
+        if "download_mirror" in payload:
+            changed["download_mirror"] = str(payload.get("download_mirror") or "").strip()
+        if "snowluma_version" in payload:
+            version = str(payload.get("snowluma_version") or "latest").strip()
+            changed["snowluma_version"] = version or "latest"
+        if "release_flavor" in payload:
+            flavor = str(payload.get("release_flavor") or "full").strip().lower()
+            changed["release_flavor"] = flavor if flavor in ("full", "lite") else "full"
+        for key, value in changed.items():
+            self.config[key] = value
+            self._overrides.add(key)
+        if changed:
+            self._save_config(self.config)
+            self.manager._snapshot_ts = 0.0
+        return json_response({"ok": True, "message": "下载设置已生效", "options": changed})
 
     async def api_onboarding_done(self):
         self.config["onboarding_done"] = True

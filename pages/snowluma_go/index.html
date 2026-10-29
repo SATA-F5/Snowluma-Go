@@ -29,6 +29,8 @@
                     <button class="big-btn webui" id="btn-open-webui">打开 WebUI</button>
                 </div>
 
+                <div class="guide" id="guide"></div>
+
                 <div class="download-panel" id="download-panel">
                     <div class="dl-header">
                         <div class="dl-title" id="dl-title-text">正在安装 SnowLuma</div>
@@ -123,15 +125,13 @@
                     <div class="empty-box">正在读取账号...</div>
                 </div>
 
-                <div class="aux-buttons">
+                <div class="aux-buttons" id="qq-actions">
                     <button class="btn" id="btn-qq-launch">启动 QQ</button>
                     <button class="btn" id="btn-qq-login">QQ 登录</button>
                     <button class="btn" id="btn-hook-all">全部挂载</button>
                     <button class="btn" id="btn-restart">重启</button>
                     <button class="btn" id="btn-refresh">刷新状态</button>
                 </div>
-
-                <div class="guide" id="guide"></div>
             </div>
 
             <div class="right-column">
@@ -190,45 +190,6 @@
                         <input type="text" id="cfg-external_host" placeholder="127.0.0.1" style="flex:1;">
                         <input type="number" id="cfg-external_port" placeholder="5099" style="width:110px;">
                     </div>
-                </div>
-            </div>
-
-            <div class="form-section" id="install-section">
-                <div class="form-section-title">版本与安装</div>
-                <div class="form-group">
-                    <label>SnowLuma 版本</label>
-                    <select id="cfg-snowluma_version" class="ver-select">
-                        <option value="latest">latest（最新版）</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>发行包</label>
-                    <select id="cfg-release_flavor">
-                        <option value="full">full（自带 Node）</option>
-                        <option value="lite">lite（需系统 Node）</option>
-                    </select>
-                    <div class="form-hint">
-                        安装会替换程序文件，但保留 <code>config/</code>、<code>data/</code> 等用户数据。
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>GitHub 下载镜像（可选）</label>
-                    <div class="mirror-picker" id="cfg-mirror-picker">
-                        <input type="text" id="cfg-download_mirror" placeholder="https://gh.zwy.one/" autocomplete="off" spellcheck="false">
-                        <button class="mirror-toggle" type="button" id="cfg-mirror-toggle" aria-label="选择下载镜像" aria-expanded="false">
-                            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                            </svg>
-                        </button>
-                        <div class="mirror-menu" id="cfg-mirror-menu" role="listbox" aria-label="下载镜像列表"></div>
-                    </div>
-                    <div class="form-hint">
-                        可直接输入自定义前缀，或点击右侧箭头选择内置镜像；下载失败时仍会按 NapCat_Go 的镜像顺序自动回退。
-                    </div>
-                </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button class="btn btn-primary" id="btn-install">安装 / 更新</button>
-                    <button class="btn btn-danger" id="btn-uninstall">卸载</button>
                 </div>
             </div>
 
@@ -306,6 +267,7 @@
             <div class="form-section">
                 <div class="form-section-title">维护与帮助</div>
                 <div class="aux-buttons">
+                    <button class="btn btn-primary" id="btn-open-download">下载与安装</button>
                     <button class="btn" id="btn-check-update">检查更新</button>
                     <button class="btn" id="btn-cleanup">清理残留</button>
                     <button class="btn btn-danger" id="btn-qq-cleanup">清理 QQ 进程</button>
@@ -315,7 +277,7 @@
                     <button class="btn" id="btn-replay-guide">使用引导</button>
                 </div>
                 <div class="form-hint">
-                    安装 / 更新、卸载在上方「版本与安装」中；Linux 依赖包含 fluxbox / xvfb / x11vnc / dbus-x11 等。
+                    安装、更新、卸载与下载镜像在「下载与安装」里；Linux 依赖包含 fluxbox / xvfb / x11vnc / dbus-x11 等。
                     QQ 登录界面空白或不显示时，可点「修复 QQ 登录界面」：恢复被 NapCat 改掉的启动入口并回滚热更新。
                 </div>
             </div>
@@ -323,6 +285,63 @@
             <div class="form-actions">
                 <button class="btn" id="btn-config-cancel">取消</button>
                 <button class="btn btn-primary" id="btn-config-save">保存配置</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="download-modal">
+        <div class="modal-content download-content">
+            <h3>下载与安装 SnowLuma</h3>
+            <div class="mini-note" id="dl-current" style="margin-bottom:14px;"></div>
+
+            <div class="form-section">
+                <div class="form-section-title">下载源</div>
+                <div class="form-group">
+                    <label>GitHub 下载镜像（选择后立即生效）</label>
+                    <div class="mirror-picker" id="dl-mirror-picker">
+                        <input type="text" id="dl-mirror-input" placeholder="https://gh.zwy.one/" autocomplete="off" spellcheck="false">
+                        <button class="mirror-toggle" type="button" id="dl-mirror-toggle" aria-label="选择下载镜像" aria-expanded="false">
+                            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </button>
+                        <div class="mirror-menu" id="dl-mirror-menu" role="listbox" aria-label="下载镜像列表"></div>
+                    </div>
+                    <div class="form-hint">
+                        可直接输入自定义前缀，或点击右侧箭头选择内置镜像。选择后无需保存，下一次下载立即使用；
+                        失败时仍会按 NapCat_Go 的镜像顺序自动回退。
+                    </div>
+                </div>
+                <div class="mini-note">
+                    下载完成后会自动检查 Linux 依赖（xvfb / x11vnc / fluxbox / dbus-x11 / scrot）；
+                    缺少时自动安装，未配置 sudo 密码则报错并跳过安装。
+                </div>
+            </div>
+
+            <div class="form-section">
+                <div class="form-section-title">版本与发行包</div>
+                <div class="form-group">
+                    <label>SnowLuma 版本</label>
+                    <select id="dl-version" class="ver-select">
+                        <option value="latest">latest（最新版）</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>发行包</label>
+                    <select id="dl-flavor">
+                        <option value="full">full（自带 Node）</option>
+                        <option value="lite">lite（需系统 Node）</option>
+                    </select>
+                    <div class="form-hint">
+                        安装会替换程序文件，但保留 <code>config/</code>、<code>data/</code> 等用户数据。
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button class="btn" id="btn-dl-close" type="button">关闭</button>
+                <button class="btn btn-danger" id="btn-dl-uninstall" type="button">卸载</button>
+                <button class="btn btn-primary" id="btn-dl-install" type="button">安装 / 更新</button>
             </div>
         </div>
     </div>

@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
+from .linux_tools import install_linux_deps, missing_linux_deps, sudo_password
 from .utils import (
     GITHUB_API,
     GITHUB_MIRRORS,
@@ -422,6 +423,29 @@ class SnowLumaDownloadMixin:
 
             digest = self._sha256_file(archive)
             self._log(f"[download] [ok] 下载完成 {asset_name}（SHA256 {digest[:16]}…）")
+
+            # Headless Linux needs Xvfb/fluxbox/x11vnc before the plugin can
+            # ever show a QQ login window. Check right after the download and
+            # install what is missing; without a sudo password we refuse rather
+            # than leaving a half-working installation behind.
+            if not IS_WINDOWS:
+                missing = missing_linux_deps()
+                if missing:
+                    self.download_state.update({"phase": "deps", "message": "检查系统依赖"})
+                    self._log(f"[install] 缺少系统依赖: {', '.join(missing)}")
+                    if not sudo_password(self.plugin):
+                        raise RuntimeError(
+                            "缺少系统依赖（"
+                            + ", ".join(missing)
+                            + "），且未配置 sudo 密码，已跳过安装"
+                        )
+                    self.download_state.update({"phase": "deps", "message": "安装系统依赖"})
+                    deps = await install_linux_deps(self.plugin)
+                    if not deps.get("ok"):
+                        raise RuntimeError(
+                            "系统依赖安装失败：" + str(deps.get("message") or "未知错误")
+                        )
+                    self._log("[install] 系统依赖已就绪")
 
             self.download_state.update({"phase": "extracting", "message": "解压安装包"})
             staging = self.persistent_dir / "downloads" / f".staging-{int(time.time())}"

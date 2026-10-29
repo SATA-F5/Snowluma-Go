@@ -163,6 +163,19 @@ async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
     return {"ok": ok, "message": message, "steps": steps}
 
 
+LINUX_DEP_BINARIES = ("Xvfb", "x11vnc", "xwininfo")
+
+
+def missing_linux_deps() -> List[str]:
+    """Return the headless runtime packages the plugin needs, as binary names."""
+    missing = [name for name in LINUX_DEP_BINARIES if not have_binary(name)]
+    if not have_binary("fluxbox"):
+        missing.append("fluxbox")
+    if not any(have_binary(name) for name in ("scrot", "import", "ffmpeg")):
+        missing.append("scrot/imagemagick")
+    return missing
+
+
 async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
     if not IS_LINUX:
         return {"ok": False, "message": "该操作仅支持 Linux"}
@@ -205,15 +218,7 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
             "output": output,
         }
     )
-    missing = [
-        name
-        for name in ("Xvfb", "x11vnc", "xwininfo")
-        if not have_binary(name)
-    ]
-    if not have_binary("fluxbox"):
-        missing.append("fluxbox")
-    if not any(have_binary(name) for name in ("scrot", "import", "ffmpeg")):
-        missing.append("scrot/imagemagick")
+    missing = missing_linux_deps()
     if missing:
         steps.append(
             {

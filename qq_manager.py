@@ -588,9 +588,9 @@ class QQManager:
                 try:
                     with open(log_path, "ab") as log:
                         self._xvfb_proc = subprocess.Popen(
-                            # Match SnowLuma's documented headless screen:
-                            # 1920x1080 at 16-bit works with Linux QQ's login UI.
-                            [xvfb, display, "-screen", "0", "1920x1080x16", "-ac"],
+                            # Compact virtual screen: the QQ login window is
+                            # ~400x600, so 800x600 keeps QR captures small.
+                            [xvfb, display, "-screen", "0", "800x600x16", "-ac"],
                             stdout=log,
                             stderr=log,
                             start_new_session=True,
@@ -1021,7 +1021,7 @@ class QQManager:
                     "-f",
                     "x11grab",
                     "-video_size",
-                    "1280x800",
+                    "800x600",
                     "-i",
                     display,
                     "-frames:v",

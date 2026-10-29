@@ -64,9 +64,27 @@ a { color: var(--primary-light); }
 }
 
 .modal-content.wide { width: 640px; }
+.modal-content.download-content { width: 560px; }
 .modal-content .form-group input[type="password"] { font-family: 'Consolas', monospace; }
 
-.form-section .aux-buttons { margin-top: 6px; }
+.form-section .aux-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin-top: 6px;
+}
+#qq-actions {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+}
+#qq-actions .btn { width: 100%; }
+@media (max-width: 1200px) {
+    #qq-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+    #qq-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .qq-qr-wrap {
     min-height: 260px;
