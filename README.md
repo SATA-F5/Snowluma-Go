@@ -185,6 +185,12 @@ Linux QQ 的已知问题，常见原因是热更新版本与系统 `libcurl` / `
 - 系统缺少 libssh2 时：`sudo apt-get install -y libssh2-1`
 - 也可以手动把 QQ 自带的 `libssh2.so.1` 改名（可恢复），再重启 QQ
 
+### 日志出现 `EACCES ... mkdir '.../.config/QQ/log'`
+
+QQ 配置目录被其他用户（通常是 root）占用，QQ 会在创建日志目录时直接退出，因此不会有登录窗口。
+
+现在启动 QQ / 启动 SnowLuma 前会自动检测 `~/.config/QQ` 是否可写，需要时弹窗索取 sudo 密码并自动 `chown/chmod`。也可以手动点 **修复 QQ 权限**。
+
 ### 日志出现 `EACCES ... /proc/<pid>/environ`
 
 SnowLuma 通过 ptrace 注入 QQ，被 Yama 或权限策略拦住了。

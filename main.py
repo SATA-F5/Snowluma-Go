@@ -267,25 +267,25 @@ class SnowLumaGoPlugin(Star):
         return payload, *self._sudo_from_payload(payload)
 
     async def _post_start_qq_repair(self) -> None:
-        """Appended to the start flow: fix a NapCat injection that hides QQ.
+        """Appended to the start flow: fix NapCat injection / QQ config perms.
 
-        NapCat rewrites QQ's Electron entry to ``loadNapCat.js``. Once its
-        payload disappears, QQ exits before mapping a window, so we detect and
-        undo it whenever SnowLuma starts.
+        NapCat rewrites QQ's Electron entry to ``loadNapCat.js``, and a
+        root-owned ``~/.config/QQ`` makes QQ die with EACCES before mapping a
+        window. Both are detected and repaired when SnowLuma starts.
         """
         try:
-            result = await self.manager.qq.auto_repair_napcat_entry("")
+            result = await self.manager.qq.prepare_qq_environment("")
             if result.get("ok") and not result.get("skipped"):
-                logger.info(f"[{PLUGIN_NAME}] NapCat 注入已自动修复: {result.get('message')}")
+                logger.info(f"[{PLUGIN_NAME}] QQ 启动环境已自动修复: {result.get('message')}")
             elif result.get("need_sudo"):
                 logger.warning(
-                    f"[{PLUGIN_NAME}] 检测到 NapCat 注入需要 sudo 密码修复，"
-                    "请在 WebUI 点击启动/启动 QQ 并按提示输入"
+                    f"[{PLUGIN_NAME}] QQ 启动环境需要 sudo 密码修复，"
+                    "请在 WebUI 点击启动 / 启动 QQ 并按提示输入"
                 )
             elif not result.get("ok"):
-                logger.warning(f"[{PLUGIN_NAME}] NapCat 注入修复失败: {result.get('message')}")
+                logger.warning(f"[{PLUGIN_NAME}] QQ 启动环境修复失败: {result.get('message')}")
         except Exception as exc:
-            logger.warning(f"[{PLUGIN_NAME}] NapCat 注入检测失败: {exc}")
+            logger.warning(f"[{PLUGIN_NAME}] QQ 启动环境检测失败: {exc}")
 
     async def _auto_start_wrapper(self) -> None:
         try:
@@ -377,7 +377,7 @@ class SnowLumaGoPlugin(Star):
         if sudo_err:
             return error_response(sudo_err)
         if IS_LINUX:
-            pre = await self.manager.qq.auto_repair_napcat_entry(password)
+            pre = await self.manager.qq.prepare_qq_environment(password)
             if pre.get("need_sudo"):
                 return json_response(
                     {"ok": False, "need_sudo": True, "message": pre.get("message")}
@@ -398,7 +398,7 @@ class SnowLumaGoPlugin(Star):
         if sudo_err:
             return error_response(sudo_err)
         if IS_LINUX:
-            pre = await self.manager.qq.auto_repair_napcat_entry(password)
+            pre = await self.manager.qq.prepare_qq_environment(password)
             if pre.get("need_sudo"):
                 return json_response(
                     {"ok": False, "need_sudo": True, "message": pre.get("message")}

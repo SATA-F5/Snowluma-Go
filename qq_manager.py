@@ -731,7 +731,6 @@ class QQManager:
                 "-rfbport",
                 str(port),
                 "-noxdamage",
-                "-quiet",
             ]
             if vnc_password:
                 passfile = self.manager.persistent_dir / ".vncpass"
@@ -758,20 +757,25 @@ class QQManager:
             vnc_log = self.manager.persistent_dir / "x11vnc.log"
             vnc_log.parent.mkdir(parents=True, exist_ok=True)
             try:
-                with open(vnc_log, "ab") as log:
-                    self._vnc_proc = subprocess.Popen(
-                        args,
-                        env=env,
-                        stdout=log,
-                        stderr=log,
-                        start_new_session=True,
-                    )
+                try:
+                    vnc_log.write_bytes(b"")
+                except Exception:
+                    pass
+                args += ["-o", str(vnc_log)]
+                self._vnc_proc = subprocess.Popen(
+                    args,
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
                 time.sleep(1.0)
                 code = self._vnc_proc.poll()
                 if code is not None:
+                    detail = self._tail_log(vnc_log, 400) or "x11vnc 没有输出（可尝试手动运行同样的命令）"
                     self.manager._log(
-                        f"[qq] [warn] x11vnc 启动后退出（code={code}）: "
-                        f"{shorten(self._tail_log(vnc_log), 240)}",
+                        f"[qq] [warn] x11vnc 启动后退出（code={code}，DISPLAY={display}，端口 {port}）: "
+                        f"{detail}",
                         "warning",
                     )
                     self._vnc_proc = None
@@ -1084,6 +1088,80 @@ class QQManager:
             # NapCat's loader does `import("./napcat/napcat.mjs")`. When either
             # file is gone QQ dies before creating the login window.
             "broken": hijacked and not (loader.is_file() and napcat.is_file()),
+        }
+
+    def qq_config_writable(self) -> bool:
+        """Whether QQ can create its own ``~/.config/QQ/log`` directory."""
+        if IS_WINDOWS:
+            return True
+        config = Path.home() / ".config" / "QQ"
+        try:
+            config.mkdir(parents=True, exist_ok=True)
+            log_dir = config / "log"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            probe = log_dir / ".snowluma-write-test"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+            return True
+        except Exception:
+            return False
+
+    async def _ensure_qq_config_writable(self, password: str) -> Dict[str, Any]:
+        """Fix a root-owned ``~/.config/QQ`` so QQ stops failing with EACCES."""
+        if IS_WINDOWS or self.qq_config_writable():
+            return {"ok": True, "skipped": True}
+        config = Path.home() / ".config" / "QQ"
+        if not password:
+            self.manager._log(
+                f"[qq] [warn] QQ 配置目录不可写（{config}），QQ 会以 "
+                "`EACCES: permission denied, mkdir .../QQ/log` 退出",
+                "warning",
+            )
+            return {
+                "ok": False,
+                "need_sudo": True,
+                "message": "QQ 配置目录不可写，需要 sudo 密码修复权限",
+            }
+        if not config.exists():
+            return {
+                "ok": False,
+                "message": f"QQ 配置目录不存在且无法创建: {config}",
+            }
+        uid = os.getuid() if hasattr(os, "getuid") else 0
+        gid = os.getgid() if hasattr(os, "getgid") else 0
+        for args in (
+            ["chown", "-R", f"{uid}:{gid}", str(config)],
+            ["chmod", "-R", "u+rwX", str(config)],
+        ):
+            code, output = await run_sudo(self.manager.plugin, args, password)
+            if code != 0:
+                return {
+                    "ok": False,
+                    "message": f"修复 QQ 配置目录权限失败: {shorten(output, 180)}",
+                }
+        if not self.qq_config_writable():
+            return {
+                "ok": False,
+                "message": "QQ 配置目录仍不可写，请检查 ~/.config/QQ 的所有者",
+            }
+        self.manager._log(f"[qq] 已修复 QQ 配置目录权限: {config}")
+        return {"ok": True, "message": "已修复 QQ 配置目录权限"}
+
+    async def prepare_qq_environment(self, password: str = "") -> Dict[str, Any]:
+        """Pre-launch fixes: NapCat injection and an unwritable QQ config dir."""
+        if IS_WINDOWS:
+            return {"ok": True, "skipped": True}
+        napcat = await self.auto_repair_napcat_entry(password)
+        if napcat.get("need_sudo") or not napcat.get("ok"):
+            return napcat
+        config = await self._ensure_qq_config_writable(password)
+        if config.get("need_sudo") or not config.get("ok"):
+            return config
+        repaired = not napcat.get("skipped") or not config.get("skipped")
+        return {
+            "ok": True,
+            "skipped": not repaired,
+            "message": napcat.get("message") or config.get("message") or "",
         }
 
     async def auto_repair_napcat_entry(self, password: str = "") -> Dict[str, Any]:
@@ -1464,17 +1542,17 @@ class QQManager:
         # repair it before every launch attempt (also covers restart flows).
         repaired = {"ok": True, "skipped": True}
         try:
-            repaired = await self.auto_repair_napcat_entry(password)
+            repaired = await self.prepare_qq_environment(password)
         except Exception as exc:
             self.manager._log(
-                f"[qq] [warn] 检查 NapCat 注入失败: {shorten(str(exc), 140)}",
+                f"[qq] [warn] 启动前环境检查失败: {shorten(str(exc), 140)}",
                 "warning",
             )
         if not repaired.get("ok"):
             payload = {
                 "ok": False,
                 "message": repaired.get("message")
-                or "NapCat 注入破坏了 QQ 启动入口，已停止启动",
+                or "QQ 启动环境检查未通过，已停止启动",
             }
             if repaired.get("need_sudo"):
                 payload["need_sudo"] = True
