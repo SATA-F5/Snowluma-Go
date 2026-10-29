@@ -158,8 +158,9 @@ NapCat 的数据目录被删除或插件改名后，这个加载器找不到 `na
 
 处理：
 
-1. 点 **配置 → 维护与帮助 → 修复 QQ 登录界面**（需要先填 sudo 密码）。
-2. 或在服务器手动恢复：
+1. 配置 sudo 密码后，**启动 SnowLuma / 启动 QQ 时会自动检测并修复**（会在日志里看到「检测到 NapCat 注入…正在自动恢复启动入口」）。
+2. 也可以手动点 **配置 → 维护与帮助 → 修复 QQ 登录界面**。
+3. 或在服务器手动恢复：
 
 ```bash
 sudo cp /opt/QQ/resources/app/package.json /opt/QQ/resources/app/package.json.napcat-bak

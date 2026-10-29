@@ -1071,13 +1071,69 @@ class QQManager:
         except Exception as exc:
             return {"found": True, "app_dir": str(app_dir), "error": shorten(str(exc), 120)}
         main = str(data.get("main") or "")
+        hijacked = "loadnapcat" in main.lower()
+        loader = app_dir / "loadNapCat.js"
+        napcat = app_dir / "napcat" / "napcat.mjs"
         return {
             "found": True,
             "app_dir": str(app_dir),
             "main": main,
-            "hijacked": "loadnapcat" in main.lower(),
-            "loader_exists": (app_dir / "loadNapCat.js").is_file(),
+            "hijacked": hijacked,
+            "loader_exists": loader.is_file(),
+            "napcat_exists": napcat.is_file(),
+            # NapCat's loader does `import("./napcat/napcat.mjs")`. When either
+            # file is gone QQ dies before creating the login window.
+            "broken": hijacked and not (loader.is_file() and napcat.is_file()),
         }
+
+    async def auto_repair_napcat_entry(self) -> Dict[str, Any]:
+        """Detect and undo a NapCat injection that hides QQ's login window.
+
+        Called automatically from the start / launch flow: a leftover
+        ``loadNapCat.js`` entry throws ``ERR_MODULE_NOT_FOUND`` inside QQ's
+        main process, so no window is ever created. Repair needs sudo because
+        ``resources/app`` is root-owned; without it we only log the reason.
+        """
+        if IS_WINDOWS:
+            return {"ok": True, "skipped": True, "message": "仅 Linux 需要"}
+        try:
+            state = self.qq_entry_state()
+        except Exception as exc:
+            return {"ok": False, "message": f"检测 NapCat 注入失败: {shorten(str(exc), 120)}"}
+        if not state.get("found") or not state.get("hijacked"):
+            return {"ok": True, "skipped": True}
+        if not state.get("broken"):
+            return {"ok": True, "skipped": True, "message": "NapCat 注入文件完整，未自动修改"}
+        if not sudo_password(self.manager.plugin):
+            self.manager._log(
+                "[qq] [err] 检测到 NapCat 注入已破坏 QQ 启动入口"
+                f"（main={state.get('main')}，napcat.mjs 缺失），"
+                "但未配置 sudo 密码，无法自动修复；请配置后点「修复 QQ 登录界面」",
+                "error",
+            )
+            return {"ok": False, "message": "未配置 sudo 密码，无法自动修复 NapCat 注入"}
+        self.manager._log(
+            "[qq] 检测到 NapCat 注入导致 QQ 无法创建登录窗口，正在自动恢复启动入口"
+        )
+        result = await self.repair_qq_entry()
+        if result.get("ok"):
+            self.manager._log(
+                f"[qq] [ok] 已自动修复 NapCat 注入（main={result.get('main')}）"
+            )
+            running = sorted(running_qq_main_pids())
+            if running:
+                self.manager._log(
+                    f"[qq] [warn] QQ 正在运行（PID {running}），需要重启 QQ 后修复才会生效",
+                    "warning",
+                )
+                result = dict(result)
+                result["message"] = "已修复 NapCat 注入，需要重启 QQ 生效"
+        else:
+            self.manager._log(
+                f"[qq] [err] 自动修复 NapCat 注入失败: {result.get('message')}",
+                "error",
+            )
+        return result
 
     async def repair_qq_entry(self) -> Dict[str, Any]:
         """Restore QQ's original ``main`` after a NapCat-style installer.
@@ -1401,6 +1457,22 @@ class QQManager:
     async def launch(self) -> Dict[str, Any]:
         if self._launching:
             return {"ok": False, "message": "QQ 正在启动中"}
+        # A stale NapCat injection kills QQ before it can map the login window;
+        # repair it before every launch attempt (also covers restart flows).
+        repaired = {"ok": True, "skipped": True}
+        try:
+            repaired = await self.auto_repair_napcat_entry()
+        except Exception as exc:
+            self.manager._log(
+                f"[qq] [warn] 检查 NapCat 注入失败: {shorten(str(exc), 140)}",
+                "warning",
+            )
+        if not repaired.get("ok"):
+            return {
+                "ok": False,
+                "message": repaired.get("message")
+                or "NapCat 注入破坏了 QQ 启动入口，已停止启动",
+            }
         if not IS_WINDOWS:
             try:
                 scope = int(Path("/proc/sys/kernel/yama/ptrace_scope").read_text().strip())
@@ -1437,17 +1509,19 @@ class QQManager:
 
         info = self.detect(force=True)
         if info["running_pids"]:
+            message = "QQ 已在运行，未重复启动"
+            if repaired.get("ok") and not repaired.get("skipped"):
+                message = "已修复 NapCat 注入，需要重启 QQ 生效"
             return {
                 "ok": True,
                 "pids": info["running_pids"],
-                "message": "QQ 已在运行，未重复启动",
+                "message": message,
             }
         entry = await asyncio.to_thread(self.qq_entry_state)
         if entry.get("hijacked"):
             self.manager._log(
-                "[qq] [warn] QQ 启动入口被 NapCat 补丁接管（main="
-                f"{entry.get('main')}）；NapCat 文件缺失时 QQ 不会创建登录窗口，"
-                "请点「修复 QQ 登录界面」",
+                "[qq] [warn] QQ 启动入口仍由 NapCat 注入接管（main="
+                f"{entry.get('main')}）；如果 NapCat 已卸载，请点「修复 QQ 登录界面」",
                 "warning",
             )
         self._launching = True

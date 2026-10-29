@@ -196,6 +196,22 @@ class SnowLumaGoPlugin(Star):
     # Auto start
     # ------------------------------------------------------------------ #
 
+    async def _post_start_qq_repair(self) -> None:
+        """Appended to the start flow: fix a NapCat injection that hides QQ.
+
+        NapCat rewrites QQ's Electron entry to ``loadNapCat.js``. Once its
+        payload disappears, QQ exits before mapping a window, so we detect and
+        undo it whenever SnowLuma starts.
+        """
+        try:
+            result = await self.manager.qq.auto_repair_napcat_entry()
+            if result.get("ok") and not result.get("skipped"):
+                logger.info(f"[{PLUGIN_NAME}] NapCat 注入已自动修复: {result.get('message')}")
+            elif not result.get("ok"):
+                logger.warning(f"[{PLUGIN_NAME}] NapCat 注入修复失败: {result.get('message')}")
+        except Exception as exc:
+            logger.warning(f"[{PLUGIN_NAME}] NapCat 注入检测失败: {exc}")
+
     async def _auto_start_wrapper(self) -> None:
         try:
             await asyncio.sleep(3)
@@ -209,6 +225,7 @@ class SnowLumaGoPlugin(Star):
             ok = await self.manager.start()
             if ok:
                 logger.info(f"[{PLUGIN_NAME}] auto_start: SnowLuma ready")
+                await self._post_start_qq_repair()
             else:
                 logger.warning(f"[{PLUGIN_NAME}] auto_start failed: {self.manager.last_error}")
         except asyncio.CancelledError:
@@ -225,6 +242,7 @@ class SnowLumaGoPlugin(Star):
             logger.info(f"[{PLUGIN_NAME}] install finished, starting SnowLuma automatically")
             if await self.manager.start():
                 logger.info(f"[{PLUGIN_NAME}] post-install auto_start: SnowLuma ready")
+                await self._post_start_qq_repair()
             else:
                 logger.warning(
                     f"[{PLUGIN_NAME}] post-install auto_start failed: {self.manager.last_error}"
@@ -281,6 +299,8 @@ class SnowLumaGoPlugin(Star):
 
     async def api_start(self):
         ok = await self.manager.start()
+        if ok:
+            await self._post_start_qq_repair()
         return json_response(
             {"ok": ok, "message": "SnowLuma 已启动" if ok else (self.manager.last_error or "启动失败")}
         )
@@ -291,6 +311,8 @@ class SnowLumaGoPlugin(Star):
 
     async def api_restart(self):
         ok = await self.manager.restart()
+        if ok:
+            await self._post_start_qq_repair()
         return json_response(
             {"ok": ok, "message": "SnowLuma 已重启" if ok else (self.manager.last_error or "重启失败")}
         )
