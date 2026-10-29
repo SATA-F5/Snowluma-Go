@@ -1115,6 +1115,24 @@ class QQManager:
         except Exception:
             return 0
 
+    def foreign_qq_pids(self) -> List[int]:
+        """QQ processes owned by another system user (typically a stale root one)."""
+        if IS_WINDOWS:
+            return []
+        uid = os.getuid() if hasattr(os, "getuid") else None
+        if uid is None:
+            return []
+        foreign: List[int] = []
+        try:
+            pids = list(self.detect().get("running_pids") or [])
+        except Exception:
+            pids = running_qq_main_pids()
+        for pid in pids:
+            owner = process_uid(pid)
+            if owner is not None and owner != uid:
+                foreign.append(pid)
+        return sorted(foreign)
+
     def qq_env_status(self) -> List[str]:
         """Cheap, side-effect-free version of ``_qq_env_problems`` for status."""
         if IS_WINDOWS:
@@ -1134,6 +1152,9 @@ class QQManager:
         scope = self.ptrace_scope()
         if scope > 0:
             problems.append(f"kernel.yama.ptrace_scope={scope}")
+        foreign = self.foreign_qq_pids()
+        if foreign:
+            problems.append("其他用户启动的 QQ 进程 " + ", ".join(str(pid) for pid in foreign))
         return problems
 
     def _qq_env_problems(self) -> List[str]:
@@ -1143,6 +1164,9 @@ class QQManager:
         scope = self.ptrace_scope()
         if scope > 0:
             problems.append(f"kernel.yama.ptrace_scope={scope}")
+        foreign = self.foreign_qq_pids()
+        if foreign:
+            problems.append("其他用户启动的 QQ 进程 " + ", ".join(str(pid) for pid in foreign))
         return problems
 
     async def prepare_qq_environment(self, password: str = "") -> Dict[str, Any]:
@@ -1184,6 +1208,12 @@ class QQManager:
             self.manager._log(
                 f"[qq] [warn] 部分权限修复失败: {fixed.get('message')}", "warning"
             )
+        foreign = self.foreign_qq_pids()
+        if foreign:
+            self.manager._log(
+                f"[qq] 正在结束其他用户的 QQ 进程: {foreign}", "warning"
+            )
+            await self.cleanup_all(password)
         remaining = self._qq_env_problems()
         if remaining:
             return {
