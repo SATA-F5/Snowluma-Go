@@ -47,7 +47,11 @@ from .utils import (
     write_json,
 )  # noqa: F401  (read_json/write_json are kept for future migrations)
 
-PLUGIN_CODE_VERSION = "1.0.1"
+PLUGIN_CODE_VERSION = "1.0.2"
+
+# Bump together with ONBOARD_VERSION in bridge.js so upgraded users get the
+# refreshed guide exactly once.
+ONBOARD_CONFIG_VERSION = 2
 
 # Stored encrypted at rest and never returned by the config API.
 SECRET_KEYS = ("webui_password", "sudo_password", "vnc_password")
@@ -565,7 +569,7 @@ class SnowLumaGoPlugin(Star):
             return error_response("请求体必须是 JSON 对象")
 
         for key, default in DEFAULT_CONFIG.items():
-            if key in SECRET_KEYS or key == "onboarding_done":
+            if key in SECRET_KEYS or key in ("onboarding_done", "onboarding_version"):
                 continue
             if key in payload and payload[key] is not None:
                 self.config[key] = _coerce(key, payload[key], default)
@@ -634,9 +638,10 @@ class SnowLumaGoPlugin(Star):
 
     async def api_onboarding_done(self):
         self.config["onboarding_done"] = True
-        self._overrides.add("onboarding_done")
+        self.config["onboarding_version"] = ONBOARD_CONFIG_VERSION
+        self._overrides.update({"onboarding_done", "onboarding_version"})
         self._save_config(self.config)
-        return json_response({"ok": True})
+        return json_response({"ok": True, "version": ONBOARD_CONFIG_VERSION})
 
     # ------------------------------------------------------------------ #
     # Config persistence

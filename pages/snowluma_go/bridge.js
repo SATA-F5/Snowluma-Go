@@ -6,7 +6,8 @@
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const CHANNEL = "astrbot-plugin-page";
-    const ONBOARD_KEY = "snowluma_go_onboarded_v1";
+    const ONBOARD_KEY = "snowluma_go_onboarded_v2";
+    const ONBOARD_VERSION = 2;
     const LOCAL_HOSTS = ["127.0.0.1", "localhost", "0.0.0.0", "[::]", "::"];
     const LOOPBACK_BIND_HOSTS = ["127.0.0.1", "localhost", "::1", "[::1]"];
     const STATUS_INTERVAL = 3000;
@@ -494,7 +495,19 @@
                 type: "backdrop",
                 html: '<span class="ob-step-badge">WELCOME</span>' +
                     '<div class="ob-welcome-title">感谢您使用<br>SnowLuma Go</div>' +
-                    '<div class="ob-welcome-sub">接下来会快速认识界面，<br>并完成第一次 AstrBot 接入。</div>',
+                    '<div class="ob-welcome-sub">接下来会快速认识新界面，<br>并完成第一次 SnowLuma + QQ 接入。</div>',
+            },
+            {
+                type: "backdrop",
+                html: '<span class="ob-step-badge">1.0.2 更新</span>' +
+                    "<h3>这次改了什么</h3>" +
+                    "<ul>" +
+                    "<li><b>下载与安装</b> 拆成独立页面：镜像、版本、发行包都在里面，选中镜像后立即生效；</li>" +
+                    "<li>下载完成后自动检查 Linux 依赖，缺少时自动安装；未配置 sudo 密码会报错并跳过安装；</li>" +
+                    "<li>虚拟屏幕改为 <code>800x600</code>，二维码截图更贴近 QQ 登录窗口；</li>" +
+                    "<li>主界面重新排版：三个主按钮一行、操作提示置顶、日志区吸顶、状态卡自适应。</li>" +
+                    "</ul>" +
+                    '<div class="ob-hint">用过旧版也没关系，这份引导会重新出现一次，看完即可。</div>',
             },
             {
                 type: "backdrop",
@@ -513,14 +526,14 @@
             {
                 type: "backdrop",
                 html: '<span class="ob-step-badge">前置 2 / 3</span>' +
-                    "<h3>安装 SnowLuma</h3>" +
-                    "<p>点击右上角 <b>配置</b> → <b>维护与帮助</b> → <b>下载与安装</b>，选好版本后点 <b>安装 / 更新</b>：</p>" +
+                    "<h3>下载并安装 SnowLuma</h3>" +
+                    "<p>打开右上角 <b>配置</b> → <b>维护与帮助</b> → <b>下载与安装</b>：</p>" +
                     "<ul>" +
-                    "<li>优先选 <code>full</code> 发行包，自带 Node，无需额外环境；</li>" +
-                    "<li>下载走 GitHub，失败会自动切换镜像；</li>" +
-                    "<li>安装会保留 <code>config/</code>、<code>data/</code> 等用户数据。</li>" +
+                    "<li><b>下载镜像</b>：选择后立即生效，不需要保存；下载失败仍会自动回退其他镜像；</li>" +
+                    "<li><b>版本 / 发行包</b>：优先选 <code>full</code>（自带 Node）；安装会保留 <code>config/</code>、<code>data/</code> 等用户数据；</li>" +
+                    "<li><b>依赖检查</b>：下载完成后自动检测 xvfb / x11vnc / fluxbox 等依赖，缺少时自动安装；未配置 sudo 密码会报错并跳过安装。</li>" +
                     "</ul>" +
-                    '<div class="ob-hint">国内网络建议保留默认下载镜像。</div>',
+                    '<div class="ob-hint">国内网络建议保留默认镜像 <code>https://gh.zwy.one/</code>。</div>',
             },
             {
                 type: "backdrop",
@@ -529,7 +542,7 @@
                     "<ul>" +
                     "<li>SnowLuma 首次使用会要求同意用户协议，点页面里的 <b>我同意</b>；</li>" +
                     "<li>WebUI 密码由插件自动生成并加密保存，可在「WebUI 密码」处显示 / 复制，无需自己设置；</li>" +
-                    "<li>QQ 登录必须由你在 QQ 客户端里扫码或快速登录。</li>" +
+                    "<li>QQ 登录必须由你在 QQ 客户端里扫码或快速登录；无桌面服务器可以直接在「QQ 登录」弹窗里扫码。</li>" +
                     "</ul>" +
                     '<div class="ob-warn-box">没有同意协议之前，同步与密码重置都会被 SnowLuma 拒绝。</div>',
             },
@@ -539,6 +552,7 @@
             ["btn-toggle-power", "启动 / 停止", "一键启动或停止 SnowLuma。启动后插件会自动登录 WebUI 并加载账号。"],
             ["btn-sync", "立即同步", "把 AstrBot 的 OneBot v11 反向 WS 写入 SnowLuma。需要账号在线且已同意协议；按钮灰色表示条件未满足。"],
             ["btn-open-webui", "打开 WebUI", "弹出自定义面板，可打开 WebUI、复制自动适配后的地址与密码。"],
+            ["guide", "操作提示", "这里会根据当前状态提示下一步，例如同意协议、等待 QQ 登录或同步连接。"],
             ["s-run", "运行状态", "SnowLuma 是否在运行以及进程 PID。"],
             ["s-version", "版本", "当前安装的 SnowLuma 版本号；显示「未安装」时先在「下载与安装」里安装。"],
             ["s-mode", "运行方式", "auto / native / external；external 表示接管已有 SnowLuma，不下载也不拉起进程。"],
@@ -727,7 +741,8 @@
 
         let config = null;
         try { config = await apiGet("config"); } catch (error) { /* ignore */ }
-        if (config && config.onboarding_done) {
+        if (config && config.onboarding_done &&
+            Number(config.onboarding_version || 0) >= ONBOARD_VERSION) {
             try { localStorage.setItem(ONBOARD_KEY, "1"); } catch (error) { /* ignore */ }
             return;
         }
