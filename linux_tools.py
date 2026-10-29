@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from .utils import IS_LINUX, decrypt_secret, shorten
+from .utils import IS_LINUX, shorten
 
 
 _BIN_DIRS = (
@@ -36,23 +36,19 @@ def have_binary(name: str) -> bool:
     return False
 
 
-def sudo_password(plugin: Any) -> str:
-    raw = str(plugin.config.get("sudo_password", "") or "")
-    return decrypt_secret(raw) if raw else ""
-
-
 def sudo_available() -> bool:
     return have_binary("sudo")
 
 
-async def run_sudo(plugin: Any, args: List[str], timeout: float = 180.0) -> Tuple[int, str]:
+async def run_sudo(
+    plugin: Any, args: List[str], password: str, timeout: float = 180.0
+) -> Tuple[int, str]:
     if not IS_LINUX:
         return 1, "该操作仅支持 Linux"
     if not sudo_available():
         return 1, "系统没有 sudo"
-    password = sudo_password(plugin)
     if not password:
-        return 1, "未配置 sudo 密码"
+        return 1, "未提供 sudo 密码"
     try:
         proc = await asyncio.create_subprocess_exec(
             "sudo",
@@ -78,12 +74,12 @@ async def run_sudo(plugin: Any, args: List[str], timeout: float = 180.0) -> Tupl
     return int(proc.returncode or 0), text or "(无输出)"
 
 
-async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
+async def fix_qq_permissions(plugin: Any, password: str = "") -> Dict[str, Any]:
     """Fix the common Linux hook blockers: QQ config ownership and ptrace."""
     if not IS_LINUX:
         return {"ok": False, "message": "该操作仅支持 Linux"}
-    if not sudo_password(plugin):
-        return {"ok": False, "message": "请先在配置里填写 sudo 密码"}
+    if not password:
+        return {"ok": False, "need_sudo": True, "message": "该操作需要 sudo 密码"}
 
     uid = os.getuid()
     gid = os.getgid()
@@ -96,7 +92,7 @@ async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
             ["chown", "-R", f"{uid}:{gid}", str(qq_config)],
             ["chmod", "-R", "u+rwX", str(qq_config)],
         ):
-            code, output = await run_sudo(plugin, args)
+            code, output = await run_sudo(plugin, args, password)
             steps.append({"command": " ".join(args), "ok": code == 0, "output": output})
             ok = ok and code == 0
     else:
@@ -104,7 +100,7 @@ async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
 
     # SnowLuma is a sibling of QQ, not its parent. Under Yama ptrace_scope=1
     # it cannot read /proc/<qq-pid>/environ, which breaks the native hook.
-    code, output = await run_sudo(plugin, ["sysctl", "-w", "kernel.yama.ptrace_scope=0"])
+    code, output = await run_sudo(plugin, ["sysctl", "-w", "kernel.yama.ptrace_scope=0"], password)
     steps.append({"command": "sysctl -w kernel.yama.ptrace_scope=0", "ok": code == 0, "output": output})
     if code == 0:
         code, output = await run_sudo(
@@ -115,6 +111,7 @@ async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
                 "echo 'kernel.yama.ptrace_scope=0' > "
                 "/etc/sysctl.d/99-snowluma-ptrace.conf",
             ],
+            password,
         )
         steps.append(
             {
@@ -142,7 +139,7 @@ async def fix_qq_permissions(plugin: Any) -> Dict[str, Any]:
             node = str(Path(node).resolve())
         except Exception:
             pass
-        code, output = await run_sudo(plugin, ["setcap", "cap_sys_ptrace=ep", node])
+        code, output = await run_sudo(plugin, ["setcap", "cap_sys_ptrace=ep", node], password)
         steps.append(
             {
                 "command": f"setcap cap_sys_ptrace=ep {node}",
@@ -176,17 +173,17 @@ def missing_linux_deps() -> List[str]:
     return missing
 
 
-async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
+async def install_linux_deps(plugin: Any, password: str = "") -> Dict[str, Any]:
     if not IS_LINUX:
         return {"ok": False, "message": "该操作仅支持 Linux"}
-    if not sudo_password(plugin):
-        return {"ok": False, "message": "请先在配置里填写 sudo 密码"}
+    if not password:
+        return {"ok": False, "need_sudo": True, "message": "该操作需要 sudo 密码"}
     apt = shutil.which("apt-get") or ("/usr/bin/apt-get" if have_binary("apt-get") else None)
     if not apt:
         return {"ok": False, "message": "未找到 apt-get（仅支持 Debian / Ubuntu）"}
 
     steps: List[Dict[str, Any]] = []
-    code, output = await run_sudo(plugin, ["apt-get", "update"], timeout=300)
+    code, output = await run_sudo(plugin, ["apt-get", "update"], password, timeout=300)
     steps.append({"command": "apt-get update", "ok": code == 0, "output": output})
     code, output = await run_sudo(
         plugin,
@@ -206,6 +203,7 @@ async def install_linux_deps(plugin: Any) -> Dict[str, Any]:
             "imagemagick",
             "x11-utils",
         ],
+        password,
         timeout=600,
     )
     steps.append(

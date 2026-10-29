@@ -22,7 +22,7 @@ SnowLuma Go 是一个把 [SnowLuma](https://github.com/SnowLuma/SnowLuma) 一键
 2. 点右上角 **配置** → **维护与帮助** → **下载与安装**，选择发行版和版本；不确定就用默认的 `full` + 最新版。
 3. 按需选择下载镜像（选择后立即生效，不需要保存），点 **安装 / 更新**，等待日志出现安装完成。
 
-安装日志会显示下载源、校验结果和解压目录。下载完成后会自动检查 Linux 依赖（xvfb / x11vnc / fluxbox / dbus-x11 / scrot），缺少时自动安装；如果没有配置 sudo 密码，会直接报错并跳过安装。安装完成后插件会自动刷新版本状态。
+安装日志会显示下载源、校验结果和解压目录。下载完成后会自动检查 Linux 依赖（xvfb / x11vnc / fluxbox / dbus-x11 / scrot）；缺少时会弹窗索取 sudo 密码并自动安装，密码只用于本次操作。安装完成后插件会自动刷新版本状态。
 
 ### 2. 启动 SnowLuma
 
@@ -88,7 +88,7 @@ SnowLuma Go 是一个把 [SnowLuma](https://github.com/SnowLuma/SnowLuma) 一键
 | 下载与安装 | 打开独立下载页：选择版本 / 发行包 / 下载镜像，安装或卸载 |
 | 检查更新 | 查询 SnowLuma 新版本 |
 | 清理残留 | 结束本插件托管的 Xvfb / x11vnc / fluxbox / openbox 进程，清理显示锁 |
-| 清理 QQ 进程 | 结束当前用户的 QQ 进程；配置了 sudo 密码时也会尝试结束其他用户的旧进程 |
+| 清理 QQ 进程 | 结束当前用户的 QQ 进程；存在其他用户的旧进程时会再询问 sudo 密码 |
 | 修复 QQ 权限 | 修正 `~/.config/QQ` 属主、设置 `kernel.yama.ptrace_scope=0`、给 Node 授予 ptrace 能力 |
 | 修复 QQ 登录界面 | 恢复被 NapCat 补丁改掉的 QQ 启动入口，并回滚 QQ 热更新版本 |
 | 安装 Linux 依赖 | 安装 xvfb / x11vnc / fluxbox / dbus-x11 / scrot 等无头运行依赖 |
@@ -158,7 +158,7 @@ NapCat 的数据目录被删除或插件改名后，这个加载器找不到 `na
 
 处理：
 
-1. 配置 sudo 密码后，**启动 SnowLuma / 启动 QQ 时会自动检测并修复**（会在日志里看到「检测到 NapCat 注入…正在自动恢复启动入口」）。
+1. **启动 SnowLuma / 启动 QQ 时会自动检测并修复**；需要 sudo 时 WebUI 会弹窗索取密码（RSA 加密、仅本次生效，不保存）。
 2. 也可以手动点 **配置 → 维护与帮助 → 修复 QQ 登录界面**。
 3. 或在服务器手动恢复：
 
@@ -189,8 +189,8 @@ Linux QQ 的已知问题，常见原因是热更新版本与系统 `libcurl` / `
 
 SnowLuma 通过 ptrace 注入 QQ，被 Yama 或权限策略拦住了。
 
-1. 配置里填写 **sudo 密码**
-2. 点 **修复 QQ 权限**（会修正 QQ 配置属主、设置 `kernel.yama.ptrace_scope=0`、给 Node 授予 `cap_sys_ptrace`）
+1. 点 **修复 QQ 权限**，按弹窗输入 **sudo 密码**（仅本次使用）
+2. 该操作会修正 QQ 配置属主、设置 `kernel.yama.ptrace_scope=0`、给 Node 授予 `cap_sys_ptrace`
 3. **重启 SnowLuma**，再重新挂载 QQ
 
 ### VNC 连不上
@@ -234,4 +234,4 @@ SnowLuma 通过 ptrace 注入 QQ，被 Yama 或权限策略拦住了。
 注意：
 
 - AstrBot、SnowLuma、QQ 必须使用同一个系统用户运行，不要用 root 启动 QQ
-- 如果 QQ 之前用 root 启动过，配置 sudo 密码后「清理 QQ 进程」会尝试通过 sudo 结束它，并修正 `~/.config/QQ` 的属主
+- 如果 QQ 之前用 root 启动过，点「清理 QQ 进程」时会弹窗索取 sudo 密码，用于结束旧进程并修正 `~/.config/QQ` 的属主

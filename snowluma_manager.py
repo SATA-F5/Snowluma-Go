@@ -894,11 +894,18 @@ class SnowLumaManager(SnowLumaDownloadMixin):
     # Install / uninstall / cleanup
     # ------------------------------------------------------------------ #
 
-    async def install(self, version: Optional[str] = None, flavor: Optional[str] = None) -> bool:
+    async def install(
+        self,
+        version: Optional[str] = None,
+        flavor: Optional[str] = None,
+        sudo_password: str = "",
+    ) -> bool:
         if await self.is_running_check_async():
             self._record_error("SnowLuma 正在运行，请先停止后再安装")
             return False
-        ok = await self.install_release(version=version, flavor=flavor)
+        ok = await self.install_release(
+            version=version, flavor=flavor, sudo_password=sudo_password
+        )
         if ok:
             self._refresh_paths()
             self._installed_version = ""
@@ -1045,7 +1052,7 @@ class SnowLumaManager(SnowLumaDownloadMixin):
         processes = [info for info in self.processes if is_qq_process(info)]
 
         redacted_config = {**self.plugin.config}
-        for secret_key in ("webui_password", "sudo_password", "vnc_password"):
+        for secret_key in ("webui_password", "vnc_password"):
             redacted_config[secret_key] = ""
         redacted_config["webui_password"] = mask_secret(self.password)
 

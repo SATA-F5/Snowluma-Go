@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from .linux_tools import install_linux_deps, missing_linux_deps, sudo_password
+from .linux_tools import install_linux_deps, missing_linux_deps
 from .utils import (
     GITHUB_API,
     GITHUB_MIRRORS,
@@ -317,7 +317,12 @@ class SnowLumaDownloadMixin:
     # Install
     # ------------------------------------------------------------------ #
 
-    async def install_release(self, version: Optional[str] = None, flavor: Optional[str] = None) -> bool:
+    async def install_release(
+        self,
+        version: Optional[str] = None,
+        flavor: Optional[str] = None,
+        sudo_password: str = "",
+    ) -> bool:
         """Download and install a release into ``self.install_dir``.
 
         User state (``config/``, ``data/``, ``logs/`` …) is preserved: only the
@@ -433,14 +438,14 @@ class SnowLumaDownloadMixin:
                 if missing:
                     self.download_state.update({"phase": "deps", "message": "检查系统依赖"})
                     self._log(f"[install] 缺少系统依赖: {', '.join(missing)}")
-                    if not sudo_password(self.plugin):
+                    if not sudo_password:
                         raise RuntimeError(
                             "缺少系统依赖（"
                             + ", ".join(missing)
-                            + "），且未配置 sudo 密码，已跳过安装"
+                            + "），且未提供 sudo 密码，已跳过安装"
                         )
                     self.download_state.update({"phase": "deps", "message": "安装系统依赖"})
-                    deps = await install_linux_deps(self.plugin)
+                    deps = await install_linux_deps(self.plugin, sudo_password)
                     if not deps.get("ok"):
                         raise RuntimeError(
                             "系统依赖安装失败：" + str(deps.get("message") or "未知错误")

@@ -24,13 +24,20 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 from astrbot.api.web import error_response, json_response, request
 
+try:  # sudo password transport (also used by the Fernet helpers in utils)
+    from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+    from cryptography.hazmat.primitives.asymmetric import rsa as asym_rsa
+except ImportError:  # pragma: no cover
+    asym_padding = None  # type: ignore[assignment]
+    asym_rsa = None  # type: ignore[assignment]
+
 try:  # AstrBot exposes this from 4.x; keep the plugin importable otherwise.
     from astrbot.api import AstrBotConfig
 except ImportError:  # pragma: no cover
     AstrBotConfig = dict  # type: ignore
 
 from .config_syncer import ConfigSyncer
-from .linux_tools import fix_qq_permissions, install_linux_deps
+from .linux_tools import fix_qq_permissions, install_linux_deps, missing_linux_deps
 from .snowluma_manager import SnowLumaManager
 from .utils import (
     CONFIG_VERSION,
@@ -61,7 +68,7 @@ GUIDE_ASSETS = {
 }
 
 # Stored encrypted at rest and never returned by the config API.
-SECRET_KEYS = ("webui_password", "sudo_password", "vnc_password")
+SECRET_KEYS = ("webui_password", "vnc_password")
 
 
 def _coerce(key: str, value: Any, default: Any) -> Any:
@@ -98,6 +105,13 @@ class SnowLumaGoPlugin(Star):
         self._auto_start_task: Optional[asyncio.Task] = None
         self._post_install_task: Optional[asyncio.Task] = None
         self._linux_deps_task: Optional[asyncio.Task] = None
+        # Ephemeral key used to receive one-shot sudo passwords from the WebUI.
+        # Nothing is persisted; a restart invalidates previously encrypted blobs.
+        self._sudo_key = (
+            asym_rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            if asym_rsa is not None
+            else None
+        )
 
         self._register_routes(context)
 
@@ -147,6 +161,8 @@ class SnowLumaGoPlugin(Star):
             ("onboarding/done", self.api_onboarding_done, ["POST"], "完成引导"),
             ("download/options", self.api_save_download_options, ["POST"], "保存下载设置"),
             ("guide/asset", self.api_guide_asset, ["GET"], "读取引导图片"),
+            ("sudo/key", self.api_sudo_key, ["GET"], "获取 sudo 加密公钥"),
+            ("deps/status", self.api_deps_status, ["GET"], "检查 Linux 依赖"),
             ("update/check", self.api_update_check, ["GET"], "检查 SnowLuma 更新"),
         ]
         for path, handler, methods, desc in routes:
@@ -196,6 +212,60 @@ class SnowLumaGoPlugin(Star):
     # Auto start
     # ------------------------------------------------------------------ #
 
+    # ------------------------------------------------------------------ #
+    # One-shot sudo password (RSA-encrypted by the WebUI, never persisted)
+    # ------------------------------------------------------------------ #
+
+    async def api_sudo_key(self):
+        if self._sudo_key is None:
+            return error_response("缺少 cryptography 依赖，无法加密 sudo 密码")
+        numbers = self._sudo_key.public_key().public_numbers()
+        n_hex = format(numbers.n, "x")
+        if len(n_hex) % 2:
+            n_hex = "0" + n_hex
+        return json_response(
+            {
+                "ok": True,
+                "n": n_hex,
+                "e": format(numbers.e, "x"),
+                "size": (numbers.n.bit_length() + 7) // 8,
+            }
+        )
+
+    async def api_deps_status(self):
+        if not IS_LINUX:
+            return json_response({"ok": True, "missing": [], "linux": False})
+        return json_response({"ok": True, "missing": missing_linux_deps(), "linux": True})
+
+    def _sudo_from_payload(self, payload: Any) -> tuple:
+        """Decrypt ``sudo_password_enc`` from a request body.
+
+        Returns ``(password, error)``; an empty password simply means the
+        caller did not provide one.
+        """
+        if not isinstance(payload, dict):
+            return "", ""
+        encoded = str(payload.get("sudo_password_enc") or "").strip()
+        if not encoded:
+            return "", ""
+        if self._sudo_key is None or asym_padding is None:
+            return "", "缺少 cryptography 依赖，无法解密 sudo 密码"
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+            plain = self._sudo_key.decrypt(raw, asym_padding.PKCS1v15())
+            return plain.decode("utf-8").strip(), ""
+        except Exception:
+            return "", "sudo 密码解密失败，请重试"
+
+    async def _read_sudo_payload(self) -> tuple:
+        try:
+            payload = await request.json(default={})
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return payload, *self._sudo_from_payload(payload)
+
     async def _post_start_qq_repair(self) -> None:
         """Appended to the start flow: fix a NapCat injection that hides QQ.
 
@@ -204,9 +274,14 @@ class SnowLumaGoPlugin(Star):
         undo it whenever SnowLuma starts.
         """
         try:
-            result = await self.manager.qq.auto_repair_napcat_entry()
+            result = await self.manager.qq.auto_repair_napcat_entry("")
             if result.get("ok") and not result.get("skipped"):
                 logger.info(f"[{PLUGIN_NAME}] NapCat 注入已自动修复: {result.get('message')}")
+            elif result.get("need_sudo"):
+                logger.warning(
+                    f"[{PLUGIN_NAME}] 检测到 NapCat 注入需要 sudo 密码修复，"
+                    "请在 WebUI 点击启动/启动 QQ 并按提示输入"
+                )
             elif not result.get("ok"):
                 logger.warning(f"[{PLUGIN_NAME}] NapCat 注入修复失败: {result.get('message')}")
         except Exception as exc:
@@ -298,6 +373,15 @@ class SnowLumaGoPlugin(Star):
     # ------------------------------------------------------------------ #
 
     async def api_start(self):
+        _payload, password, sudo_err = await self._read_sudo_payload()
+        if sudo_err:
+            return error_response(sudo_err)
+        if IS_LINUX:
+            pre = await self.manager.qq.auto_repair_napcat_entry(password)
+            if pre.get("need_sudo"):
+                return json_response(
+                    {"ok": False, "need_sudo": True, "message": pre.get("message")}
+                )
         ok = await self.manager.start()
         if ok:
             await self._post_start_qq_repair()
@@ -310,6 +394,15 @@ class SnowLumaGoPlugin(Star):
         return json_response({"ok": True, "message": "SnowLuma 已停止"})
 
     async def api_restart(self):
+        _payload, password, sudo_err = await self._read_sudo_payload()
+        if sudo_err:
+            return error_response(sudo_err)
+        if IS_LINUX:
+            pre = await self.manager.qq.auto_repair_napcat_entry(password)
+            if pre.get("need_sudo"):
+                return json_response(
+                    {"ok": False, "need_sudo": True, "message": pre.get("message")}
+                )
         ok = await self.manager.restart()
         if ok:
             await self._post_start_qq_repair()
@@ -339,7 +432,21 @@ class SnowLumaGoPlugin(Star):
         flavor = str(payload.get("flavor") or "").strip().lower() or None
         if flavor not in (None, "full", "lite"):
             flavor = None
-        ok = await self.manager.install(version=version, flavor=flavor)
+        password, sudo_err = self._sudo_from_payload(payload)
+        if sudo_err:
+            return error_response(sudo_err)
+        if IS_LINUX and missing_linux_deps():
+            if not password:
+                return json_response(
+                    {
+                        "ok": False,
+                        "need_sudo": True,
+                        "message": "缺少 Linux 依赖，需要 sudo 密码后才能安装",
+                    }
+                )
+        ok = await self.manager.install(
+            version=version, flavor=flavor, sudo_password=password
+        )
         auto_starting = False
         if ok and bool(self.config.get("auto_start_after_install", True)):
             self._post_install_task = asyncio.ensure_future(self._start_after_install())
@@ -402,7 +509,10 @@ class SnowLumaGoPlugin(Star):
 
     async def api_qq_launch(self):
         try:
-            result = await self.manager.qq.launch()
+            _payload, password, sudo_err = await self._read_sudo_payload()
+            if sudo_err:
+                return error_response(sudo_err)
+            result = await self.manager.qq.launch(password)
             return json_response(result)
         except Exception as exc:
             return error_response(f"启动 QQ 失败: {shorten(str(exc), 200)}")
@@ -415,7 +525,10 @@ class SnowLumaGoPlugin(Star):
 
     async def api_qq_cleanup(self):
         try:
-            result = await self.manager.qq.cleanup_all()
+            _payload, password, sudo_err = await self._read_sudo_payload()
+            if sudo_err:
+                return error_response(sudo_err)
+            result = await self.manager.qq.cleanup_all(password)
             try:
                 await self.manager.refresh_accounts()
             except Exception:
@@ -426,20 +539,29 @@ class SnowLumaGoPlugin(Star):
 
     async def api_qq_restart(self):
         try:
-            result = await self.manager.qq.restart_qq()
+            _payload, password, sudo_err = await self._read_sudo_payload()
+            if sudo_err:
+                return error_response(sudo_err)
+            result = await self.manager.qq.restart_qq(password)
             return json_response(result)
         except Exception as exc:
             return error_response(f"重启 QQ 失败: {shorten(str(exc), 200)}")
 
     async def api_qq_login_qr(self):
         try:
-            return json_response(await self.manager.qq.login_qr())
+            _payload, password, sudo_err = await self._read_sudo_payload()
+            if sudo_err:
+                return error_response(sudo_err)
+            return json_response(await self.manager.qq.login_qr(password))
         except Exception as exc:
             return error_response(f"截取 QQ 登录二维码失败: {shorten(str(exc), 200)}")
 
     async def api_qq_repair_ui(self):
         try:
-            result = await self.manager.qq.repair_qq_ui()
+            _payload, password, sudo_err = await self._read_sudo_payload()
+            if sudo_err:
+                return error_response(sudo_err)
+            result = await self.manager.qq.repair_qq_ui(password)
             if result.get("ok"):
                 try:
                     await self.manager.refresh_accounts()
@@ -451,19 +573,29 @@ class SnowLumaGoPlugin(Star):
 
     async def api_linux_fix_permissions(self):
         try:
-            return json_response(await fix_qq_permissions(self))
+            _payload, password, sudo_err = await self._read_sudo_payload()
+            if sudo_err:
+                return error_response(sudo_err)
+            return json_response(await fix_qq_permissions(self, password))
         except Exception as exc:
             return error_response(f"修复权限失败: {shorten(str(exc), 200)}")
 
     async def api_linux_install_deps(self):
         if self._linux_deps_task and not self._linux_deps_task.done():
             return json_response({"ok": True, "message": "Linux 依赖正在安装中，请查看插件日志"})
-        self._linux_deps_task = asyncio.ensure_future(self._run_linux_deps())
+        _payload, password, sudo_err = await self._read_sudo_payload()
+        if sudo_err:
+            return error_response(sudo_err)
+        if not password:
+            return json_response(
+                {"ok": False, "need_sudo": True, "message": "该操作需要 sudo 密码"}
+            )
+        self._linux_deps_task = asyncio.ensure_future(self._run_linux_deps(password))
         return json_response({"ok": True, "message": "已开始安装 Linux 依赖，请稍后查看插件日志"})
 
-    async def _run_linux_deps(self) -> None:
+    async def _run_linux_deps(self, password: str) -> None:
         try:
-            result = await install_linux_deps(self)
+            result = await install_linux_deps(self, password)
             if result.get("ok"):
                 logger.info(f"[{PLUGIN_NAME}] Linux 依赖安装完成，正在启动虚拟显示 / VNC")
                 try:

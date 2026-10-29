@@ -184,6 +184,120 @@
         });
     }
 
+    // ------------------------------------------------------------------
+    // One-shot sudo password: RSA-encrypted in the browser, never stored.
+    // ------------------------------------------------------------------
+
+    let sudoPubKey = null;
+
+    async function sudoPublicKey() {
+        if (sudoPubKey) return sudoPubKey;
+        const data = await apiGet("sudo/key");
+        if (!data || !data.n || !data.e) throw new Error("无法获取 sudo 公钥");
+        sudoPubKey = {
+            n: BigInt("0x" + data.n),
+            e: BigInt("0x" + data.e),
+            size: Number(data.size) || Math.ceil(data.n.length / 2),
+        };
+        return sudoPubKey;
+    }
+
+    function modPow(base, exp, mod) {
+        let result = 1n;
+        base %= mod;
+        while (exp > 0n) {
+            if (exp & 1n) result = (result * base) % mod;
+            exp >>= 1n;
+            base = (base * base) % mod;
+        }
+        return result;
+    }
+
+    async function encryptSudo(plain) {
+        const key = await sudoPublicKey();
+        const message = new TextEncoder().encode(plain);
+        const size = key.size;
+        if (message.length > size - 11) throw new Error("sudo 密码过长");
+        const padLength = size - message.length - 3;
+        const pad = new Uint8Array(padLength);
+        crypto.getRandomValues(pad);
+        for (let i = 0; i < padLength; i += 1) {
+            if (pad[i] === 0) pad[i] = 1;
+        }
+        const block = new Uint8Array(size);
+        block[0] = 0;
+        block[1] = 2;
+        block.set(pad, 2);
+        block[2 + padLength] = 0;
+        block.set(message, 3 + padLength);
+
+        let value = 0n;
+        for (let i = 0; i < block.length; i += 1) value = (value << 8n) | BigInt(block[i]);
+        let cipher = modPow(value, key.e, key.n);
+        const out = new Uint8Array(size);
+        for (let i = size - 1; i >= 0; i -= 1) {
+            out[i] = Number(cipher & 0xffn);
+            cipher >>= 8n;
+        }
+        let binary = "";
+        for (let i = 0; i < out.length; i += 1) binary += String.fromCharCode(out[i]);
+        return btoa(binary);
+    }
+
+    function promptSudo(reason) {
+        return new Promise((resolve) => {
+            const modal = $("sudo-modal");
+            const input = $("sudo-password-input");
+            const okBtn = $("btn-sudo-ok");
+            const cancelBtn = $("btn-sudo-cancel");
+            $("sudo-reason").textContent = reason || "该操作需要 sudo 权限";
+            input.value = "";
+            modal.classList.add("visible");
+            setTimeout(() => input.focus(), 30);
+
+            const cleanup = () => {
+                modal.classList.remove("visible");
+                okBtn.removeEventListener("click", onOk);
+                cancelBtn.removeEventListener("click", onCancel);
+                input.removeEventListener("keydown", onKey);
+                okBtn.disabled = false;
+                okBtn.textContent = "确认";
+            };
+            const onCancel = () => { cleanup(); resolve(null); };
+            const onOk = async () => {
+                const password = input.value;
+                if (!password) {
+                    toast("请输入 sudo 密码", "warn", 2500);
+                    input.focus();
+                    return;
+                }
+                okBtn.disabled = true;
+                okBtn.textContent = "加密中...";
+                try {
+                    const encrypted = await encryptSudo(password);
+                    cleanup();
+                    resolve(encrypted);
+                } catch (error) {
+                    okBtn.disabled = false;
+                    okBtn.textContent = "确认";
+                    toast("加密失败：" + (error.message || error), "err", 4000);
+                }
+            };
+            const onKey = (event) => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    onOk();
+                } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    onCancel();
+                }
+            };
+            okBtn.addEventListener("click", onOk);
+            cancelBtn.addEventListener("click", onCancel);
+            input.addEventListener("keydown", onKey);
+        });
+    }
+
     function shorten(text, limit) {
         const raw = String(text == null ? "" : text);
         return raw.length > (limit || 240) ? raw.slice(0, limit || 240) + "…" : raw;
@@ -503,7 +617,7 @@
                     "<h3>这次改了什么</h3>" +
                     "<ul>" +
                     "<li><b>下载与安装</b> 拆成独立页面：镜像、版本、发行包都在里面，选中镜像后立即生效；</li>" +
-                    "<li>下载完成后自动检查 Linux 依赖，缺少时自动安装；未配置 sudo 密码会报错并跳过安装；</li>" +
+                    "<li>下载完成后自动检查 Linux 依赖；缺少时会弹窗索取 sudo 密码并自动安装（密码只用于本次操作）；</li>" +
                     "<li>虚拟屏幕改为 <code>800x600</code>，二维码截图更贴近 QQ 登录窗口；</li>" +
                     "<li>主界面重新排版：三个主按钮一行、操作提示置顶、日志区吸顶、状态卡自适应。</li>" +
                     "</ul>" +
@@ -531,7 +645,7 @@
                     "<ul>" +
                     "<li><b>下载镜像</b>：选择后立即生效，不需要保存；下载失败仍会自动回退其他镜像；</li>" +
                     "<li><b>版本 / 发行包</b>：优先选 <code>full</code>（自带 Node）；安装会保留 <code>config/</code>、<code>data/</code> 等用户数据；</li>" +
-                    "<li><b>依赖检查</b>：下载完成后自动检测 xvfb / x11vnc / fluxbox 等依赖，缺少时自动安装；未配置 sudo 密码会报错并跳过安装。</li>" +
+                    "<li><b>依赖检查</b>：下载完成后自动检测 xvfb / x11vnc / fluxbox 等依赖；缺少时会弹窗索取 sudo 密码并自动安装，密码只用于本次操作。</li>" +
                     "</ul>" +
                     '<div class="ob-hint">国内网络建议保留默认镜像 <code>https://gh.zwy.one/</code>。</div>',
             },
@@ -889,7 +1003,13 @@
                 const result = await run("stop", () => apiPost("stop"));
                 if (result) toast(result.message || "已停止", "ok");
             } else {
-                const result = await run("start", () => apiPost("start"));
+                let result = await run("start", () => apiPost("start"));
+                if (result && result.need_sudo) {
+                    const enc = await promptSudo(
+                        "启动前需要 sudo 密码修复 NapCat 注入或设置 ptrace（仅本次使用）"
+                    );
+                    if (enc) result = await run("start", () => apiPost("start", { sudo_password_enc: enc }));
+                }
                 if (result) toast(result.message || (result.ok ? "已启动" : "启动失败"), result.ok ? "ok" : "err", 4000);
             }
             refreshStatus();
@@ -906,7 +1026,11 @@
     }
 
     async function actionStartQQ() {
-        const result = await run("qq-launch", () => apiPost("qq/launch"));
+        let result = await run("qq-launch", () => apiPost("qq/launch"));
+        if (result && result.need_sudo) {
+            const enc = await promptSudo("启动 QQ 需要 sudo 密码修复 NapCat 注入（仅本次使用）");
+            if (enc) result = await run("qq-launch", () => apiPost("qq/launch", { sudo_password_enc: enc }));
+        }
         if (result) toast(result.message || "已发出启动指令", result.ok ? "ok" : "err", 4000);
         refreshStatus();
     }
@@ -926,7 +1050,11 @@
 
     async function actionRestart() {
         if (!(await confirmDialog("重启会短暂中断 QQ 消息收发，继续？", "重启"))) return;
-        const result = await run("restart", () => apiPost("restart"));
+        let result = await run("restart", () => apiPost("restart"));
+        if (result && result.need_sudo) {
+            const enc = await promptSudo("重启前需要 sudo 密码修复 NapCat 注入（仅本次使用）");
+            if (enc) result = await run("restart", () => apiPost("restart", { sudo_password_enc: enc }));
+        }
         if (result) toast(result.message || (result.ok ? "已重启" : "重启失败"), result.ok ? "ok" : "err", 4000);
         refreshStatus();
     }
@@ -944,10 +1072,20 @@
     async function actionCleanupQQ() {
         if (!(await confirmDialog(
             "将强制结束 QQ 进程（包括正在登录的 QQ）。" +
-            "如果配置了 sudo 密码，也会结束其他用户启动的 QQ。继续？",
+            "如果存在其他用户启动的 QQ，会再询问一次 sudo 密码。继续？",
             "清理 QQ"
         ))) return;
-        const result = await run("qq-cleanup", () => apiPost("qq/cleanup"));
+        let result = await run("qq-cleanup", () => apiPost("qq/cleanup"));
+        if (result && Array.isArray(result.skipped) && result.skipped.length) {
+            const enc = await promptSudo(
+                "有属于其他系统用户的 QQ 进程，需要 sudo 密码才能结束（仅本次使用）"
+            );
+            if (enc) {
+                result = await run("qq-cleanup", () =>
+                    apiPost("qq/cleanup", { sudo_password_enc: enc })
+                );
+            }
+        }
         if (result) {
             toast(result.message || (result.ok ? "已清理 QQ 进程" : "清理 QQ 失败"),
                 result.ok ? "ok" : "err", 6000);
@@ -965,7 +1103,15 @@
         image.removeAttribute("src");
         hint.textContent = "正在启动虚拟显示并截取 QQ 登录二维码，首次可能需要几秒；空白时请稍后点刷新。";
         vnc.textContent = "";
-        const result = await run("qq-qr", () => apiPost("qq/login-qr", {}, 45000));
+        let result = await run("qq-qr", () => apiPost("qq/login-qr", {}, 45000));
+        if (result && result.need_sudo) {
+            const enc = await promptSudo("登录 QQ 前需要 sudo 密码修复 NapCat 注入（仅本次使用）");
+            if (enc) {
+                result = await run("qq-qr", () =>
+                    apiPost("qq/login-qr", { sudo_password_enc: enc }, 45000)
+                );
+            }
+        }
         if (!result) return;
         if (result.ok && result.image) {
             image.src = result.image;
@@ -1008,7 +1154,15 @@
             "将结束当前 QQ 进程，并在插件管理的虚拟显示里重新启动，继续？",
             "重启 QQ"
         ))) return;
-        const result = await run("qq-restart", () => apiPost("qq/restart", {}, 45000));
+        let result = await run("qq-restart", () => apiPost("qq/restart", {}, 45000));
+        if (result && result.need_sudo) {
+            const enc = await promptSudo("重启 QQ 前需要 sudo 密码修复 NapCat 注入（仅本次使用）");
+            if (enc) {
+                result = await run("qq-restart", () =>
+                    apiPost("qq/restart", { sudo_password_enc: enc }, 45000)
+                );
+            }
+        }
         if (result) {
             toast(result.message || (result.ok ? "QQ 已重启" : "重启 QQ 失败"),
                 result.ok ? "ok" : "err", 5000);
@@ -1029,7 +1183,11 @@
             "将使用 sudo 修正 ~/.config/QQ 的所有者与权限，并把 kernel.yama.ptrace_scope 设为 0。继续？",
             "修复权限"
         ))) return;
-        const result = await run("linux-fix", () => apiPost("linux/fix-permissions", {}, 60000));
+        const enc = await promptSudo("修复 QQ 权限需要 sudo 密码（仅本次使用）");
+        if (!enc) return;
+        const result = await run("linux-fix", () =>
+            apiPost("linux/fix-permissions", { sudo_password_enc: enc }, 60000)
+        );
         if (result) toast(result.message || (result.ok ? "修复完成" : "修复失败"),
             result.ok ? "ok" : "err", 8000);
         refreshStatus();
@@ -1038,10 +1196,14 @@
     async function actionRepairQQ() {
         if (!(await confirmDialog(
             "会先结束 QQ 进程，再恢复被 NapCat 补丁改掉的 QQ 启动入口（package.json 的 main），" +
-            "并备份 ~/.config/QQ/versions 下的热更新版本。需要已配置 sudo 密码。继续？",
+            "并备份 ~/.config/QQ/versions 下的热更新版本。需要 sudo 密码。继续？",
             "修复 QQ 登录界面"
         ))) return;
-        const result = await run("qq-repair", () => apiPost("qq/repair-ui", {}, 60000));
+        const enc = await promptSudo("修复 QQ 登录界面需要 sudo 密码（仅本次使用）");
+        if (!enc) return;
+        const result = await run("qq-repair", () =>
+            apiPost("qq/repair-ui", { sudo_password_enc: enc }, 60000)
+        );
         if (result) toast(result.message || (result.ok ? "已回滚 QQ 热更新" : "修复失败"),
             result.ok ? "ok" : "err", 9000);
         refreshStatus();
@@ -1053,7 +1215,11 @@
             "libcap2-bin、scrot、imagemagick、x11-utils，可能需要几分钟。继续？",
             "安装依赖"
         ))) return;
-        const result = await run("linux-deps", () => apiPost("linux/install-deps"));
+        const enc = await promptSudo("安装 Linux 依赖需要 sudo 密码（仅本次使用）");
+        if (!enc) return;
+        const result = await run("linux-deps", () =>
+            apiPost("linux/install-deps", { sudo_password_enc: enc })
+        );
         if (result) toast(result.message || (result.ok ? "安装完成" : "安装失败"),
             result.ok ? "ok" : "err", 8000);
     }
@@ -1300,8 +1466,30 @@
             : "将下载并安装 SnowLuma " + version + "（" + flavor + "）包。继续？";
         if (!(await confirmDialog(message, "开始安装"))) return;
         await saveDownloadOptions({ snowluma_version: version, release_flavor: flavor });
+
+        let sudoEnc = "";
+        try {
+            const deps = await apiGet("deps/status");
+            if (deps && deps.linux && Array.isArray(deps.missing) && deps.missing.length) {
+                sudoEnc = await promptSudo(
+                    "安装前需要先安装 Linux 依赖：" + deps.missing.join("、") + "（仅本次使用）"
+                );
+                if (!sudoEnc) return;
+            }
+        } catch (error) { /* backend checks again */ }
+
         closeDownload();
-        const result = await run("install", () => apiPost("install", { version: version, flavor: flavor }));
+        let result = await run("install", () =>
+            apiPost("install", { version: version, flavor: flavor, sudo_password_enc: sudoEnc })
+        );
+        if (result && result.need_sudo) {
+            const enc = await promptSudo("缺少 Linux 依赖，需要 sudo 密码（仅本次使用）");
+            if (enc) {
+                result = await run("install", () =>
+                    apiPost("install", { version: version, flavor: flavor, sudo_password_enc: enc })
+                );
+            }
+        }
         if (result) toast(result.message || (result.ok ? "安装完成" : "安装失败"), result.ok ? "ok" : "err", 5000);
         refreshStatus();
     }
@@ -1386,7 +1574,6 @@
             });
             $("cfg-webui_password").value = "";
             $("cfg-webui_password").type = "password";
-            $("cfg-sudo_password").value = "";
             $("cfg-vnc_password").value = "";
             $("config-modal").classList.add("visible");
         } catch (error) {
@@ -1410,8 +1597,6 @@
         });
         const password = $("cfg-webui_password").value.trim();
         if (password) payload.webui_password = password;
-        const sudoPassword = $("cfg-sudo_password").value.trim();
-        if (sudoPassword) payload.sudo_password = sudoPassword;
         const vncPassword = $("cfg-vnc_password").value.trim();
         if (vncPassword) payload.vnc_password = vncPassword;
 

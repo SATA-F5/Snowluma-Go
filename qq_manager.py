@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from astrbot.api import logger
 
-from .linux_tools import run_sudo, sudo_password
+from .linux_tools import run_sudo
 from .utils import (
     CREATE_NO_WINDOW,
     IS_WINDOWS,
@@ -1049,11 +1049,11 @@ class QQManager:
                 continue
         return False
 
-    async def restart_qq(self) -> Dict[str, Any]:
+    async def restart_qq(self, password: str = "") -> Dict[str, Any]:
         """Restart QQ so it moves onto the plugin's managed virtual display."""
-        await self.cleanup_all()
+        await self.cleanup_all(password)
         await asyncio.sleep(0.8)
-        return await self.launch()
+        return await self.launch(password)
 
     @staticmethod
     def _qq_versions_dir() -> Path:
@@ -1086,7 +1086,7 @@ class QQManager:
             "broken": hijacked and not (loader.is_file() and napcat.is_file()),
         }
 
-    async def auto_repair_napcat_entry(self) -> Dict[str, Any]:
+    async def auto_repair_napcat_entry(self, password: str = "") -> Dict[str, Any]:
         """Detect and undo a NapCat injection that hides QQ's login window.
 
         Called automatically from the start / launch flow: a leftover
@@ -1104,18 +1104,22 @@ class QQManager:
             return {"ok": True, "skipped": True}
         if not state.get("broken"):
             return {"ok": True, "skipped": True, "message": "NapCat 注入文件完整，未自动修改"}
-        if not sudo_password(self.manager.plugin):
+        if not password:
             self.manager._log(
-                "[qq] [err] 检测到 NapCat 注入已破坏 QQ 启动入口"
+                "[qq] [warn] 检测到 NapCat 注入已破坏 QQ 启动入口"
                 f"（main={state.get('main')}，napcat.mjs 缺失），"
-                "但未配置 sudo 密码，无法自动修复；请配置后点「修复 QQ 登录界面」",
-                "error",
+                "需要 sudo 密码才能自动修复；请在 WebUI 输入后重试",
+                "warning",
             )
-            return {"ok": False, "message": "未配置 sudo 密码，无法自动修复 NapCat 注入"}
+            return {
+                "ok": False,
+                "need_sudo": True,
+                "message": "需要 sudo 密码自动修复 NapCat 注入",
+            }
         self.manager._log(
             "[qq] 检测到 NapCat 注入导致 QQ 无法创建登录窗口，正在自动恢复启动入口"
         )
-        result = await self.repair_qq_entry()
+        result = await self.repair_qq_entry(password)
         if result.get("ok"):
             self.manager._log(
                 f"[qq] [ok] 已自动修复 NapCat 注入（main={result.get('main')}）"
@@ -1135,7 +1139,7 @@ class QQManager:
             )
         return result
 
-    async def repair_qq_entry(self) -> Dict[str, Any]:
+    async def repair_qq_entry(self, password: str = "") -> Dict[str, Any]:
         """Restore QQ's original ``main`` after a NapCat-style installer.
 
         NapCat patches ``resources/app/package.json`` to run ``loadNapCat.js``,
@@ -1153,14 +1157,13 @@ class QQManager:
             return {"ok": False, "message": f"读取 package.json 失败: {state['error']}"}
         if not state.get("hijacked"):
             return {"ok": True, "already": True, "message": "QQ 启动入口正常，无需修复"}
-        if not sudo_password(self.manager.plugin):
+        if not password:
             return {
                 "ok": False,
+                "need_sudo": True,
                 "message": (
-                    "QQ 启动入口被 NapCat 补丁接管（main=loadNapCat.js），"
-                    "但 NapCat 文件已不存在。请在配置里填写 sudo 密码后重试，"
-                    "或手动执行：sudo cp /opt/QQ/resources/app/package.json "
-                    "/opt/QQ/resources/app/package.json.napcat-bak"
+                    "恢复 QQ 启动入口需要 sudo 密码；"
+                    "请在 WebUI 中输入后重试"
                 ),
             }
         base = Path(app_dir)
@@ -1196,7 +1199,7 @@ class QQManager:
             ["cp", str(tmp), str(pkg_path)],
             ["chmod", "644", str(pkg_path)],
         ):
-            code, output = await run_sudo(self.manager.plugin, args)
+            code, output = await run_sudo(self.manager.plugin, args, password)
             steps.append({"command": " ".join(args), "ok": code == 0, "output": output})
             if code != 0:
                 return {
@@ -1207,7 +1210,7 @@ class QQManager:
         loader = base / "loadNapCat.js"
         if loader.is_file():
             code, output = await run_sudo(
-                self.manager.plugin, ["mv", str(loader), f"{loader}.disabled"]
+                self.manager.plugin, ["mv", str(loader), f"{loader}.disabled"], password
             )
             steps.append(
                 {"command": f"mv {loader} {loader}.disabled", "ok": code == 0, "output": output}
@@ -1220,7 +1223,7 @@ class QQManager:
             "message": f"已恢复 QQ 启动入口为 {target_main}，请重新「启动 QQ」",
         }
 
-    async def repair_qq_ui(self) -> Dict[str, Any]:
+    async def repair_qq_ui(self, password: str = "") -> Dict[str, Any]:
         """Roll back a broken QQ hot update, a known cause of a blank login UI.
 
         QQNT hot-updates itself into ``~/.config/QQ/versions/<build>``. Some
@@ -1230,8 +1233,8 @@ class QQManager:
         """
         if IS_WINDOWS:
             return {"ok": False, "message": "该修复仅适用于 Linux"}
-        await self.cleanup_all()
-        entry = await self.repair_qq_entry()
+        await self.cleanup_all(password)
+        entry = await self.repair_qq_entry(password)
         if entry.get("ok") and not entry.get("already"):
             return entry
         if not entry.get("ok") and entry.get("message", "").startswith("QQ 启动入口被"):
@@ -1278,7 +1281,7 @@ class QQManager:
             "message": "已回滚 QQ 热更新版本，请重新「启动 QQ」",
         }
 
-    async def login_qr(self) -> Dict[str, Any]:
+    async def login_qr(self, password: str = "") -> Dict[str, Any]:
         if IS_WINDOWS:
             return {"ok": False, "message": "Windows 会直接显示 QQ 登录窗口，无需截图"}
         display = await asyncio.to_thread(self.ensure_display)
@@ -1289,7 +1292,7 @@ class QQManager:
             }
 
         if not running_qq_main_pids():
-            result = await self.launch()
+            result = await self.launch(password)
             if not result.get("ok"):
                 return result
             # QQ needs a moment to paint the login window; the user can refresh
@@ -1454,33 +1457,37 @@ class QQManager:
 
     # ---------------- launch / stop ----------------
 
-    async def launch(self) -> Dict[str, Any]:
+    async def launch(self, password: str = "") -> Dict[str, Any]:
         if self._launching:
             return {"ok": False, "message": "QQ 正在启动中"}
         # A stale NapCat injection kills QQ before it can map the login window;
         # repair it before every launch attempt (also covers restart flows).
         repaired = {"ok": True, "skipped": True}
         try:
-            repaired = await self.auto_repair_napcat_entry()
+            repaired = await self.auto_repair_napcat_entry(password)
         except Exception as exc:
             self.manager._log(
                 f"[qq] [warn] 检查 NapCat 注入失败: {shorten(str(exc), 140)}",
                 "warning",
             )
         if not repaired.get("ok"):
-            return {
+            payload = {
                 "ok": False,
                 "message": repaired.get("message")
                 or "NapCat 注入破坏了 QQ 启动入口，已停止启动",
             }
+            if repaired.get("need_sudo"):
+                payload["need_sudo"] = True
+            return payload
         if not IS_WINDOWS:
             try:
                 scope = int(Path("/proc/sys/kernel/yama/ptrace_scope").read_text().strip())
                 if scope > 0:
-                    if sudo_password(self.manager.plugin):
+                    if password:
                         code, output = await run_sudo(
                             self.manager.plugin,
                             ["sysctl", "-w", "kernel.yama.ptrace_scope=0"],
+                            password,
                             timeout=30,
                         )
                         if code == 0:
@@ -1711,7 +1718,7 @@ class QQManager:
         self.manager._log(f"[qq] 已关闭本插件启动的 QQ 进程: {targets}")
         return {"ok": True, "pids": targets, "message": "已关闭本插件启动的 QQ"}
 
-    async def cleanup_all(self) -> Dict[str, Any]:
+    async def cleanup_all(self, password: str = "") -> Dict[str, Any]:
         """Kill QQ processes owned by this user, plus foreign ones via sudo."""
         pids = running_qq_pids()
         if not pids:
@@ -1740,12 +1747,13 @@ class QQManager:
                 )
 
         # An old root-owned QQ is exactly why the panel can see a process but
-        # SnowLuma cannot hook it. Use the encrypted sudo password for these.
+        # SnowLuma cannot hook it. Use the one-shot sudo password for these.
         if foreign:
-            if sudo_password(self.manager.plugin):
+            if password:
                 code, output = await run_sudo(
                     self.manager.plugin,
                     ["kill", "-9", *[str(pid) for pid in foreign]],
+                    password,
                     timeout=30,
                 )
                 if code == 0:

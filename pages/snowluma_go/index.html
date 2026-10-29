@@ -244,13 +244,6 @@
                         可在 SnowLuma 启动日志中搜索 <code>initial credentials</code> 找到初始密码。
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>sudo 密码（Linux 修复用）</label>
-                    <input type="password" id="cfg-sudo_password" placeholder="留空表示不修改" autocomplete="off">
-                    <div class="form-hint">
-                        仅用于 chown / sysctl / apt 等修复命令，加密保存，接口不会回显明文。
-                    </div>
-                </div>
             </div>
 
             <div class="form-section">
@@ -395,6 +388,24 @@
                 <button class="btn" id="btn-qq-login-restart" type="button">重启 QQ 并刷新</button>
                 <button class="btn" id="btn-copy-qq-vnc" type="button">复制 VNC 地址</button>
                 <button class="btn" id="btn-close-qq-login" type="button">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="sudo-modal">
+        <div class="modal-content">
+            <h3>需要 sudo 密码</h3>
+            <div class="mini-note" id="sudo-reason" style="margin-bottom:12px;"></div>
+            <div class="form-group">
+                <label>sudo 密码</label>
+                <input type="password" id="sudo-password-input" autocomplete="off" spellcheck="false" placeholder="输入 Linux 用户密码">
+                <div class="form-hint">
+                    仅本次操作使用：RSA 公钥加密后发送到后端，用完即弃，不会保存到配置或日志。
+                </div>
+            </div>
+            <div class="form-actions">
+                <button class="btn" id="btn-sudo-cancel" type="button">取消</button>
+                <button class="btn btn-primary" id="btn-sudo-ok" type="button">确认</button>
             </div>
         </div>
     </div>
