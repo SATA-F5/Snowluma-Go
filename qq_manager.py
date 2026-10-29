@@ -1861,7 +1861,7 @@ class QQManager:
         if skipped:
             message = (
                 f"已结束 {len(killed)} 个 QQ 进程；还有 {len(skipped)} 个属于其他系统用户，"
-                "请配置 sudo 密码或手动结束"
+                "请在弹出的 sudo 窗口输入密码或手动结束"
             )
             self.manager._log(f"[qq] [warn] {message}", "warning")
         else:

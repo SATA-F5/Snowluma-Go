@@ -568,6 +568,12 @@ class SnowLumaManager(SnowLumaDownloadMixin):
 
         if await self.is_running_check_async():
             return True
+        # We are not tracking a running process, but a previous plugin process
+        # may have left one behind (it would occupy the WebUI port and keep
+        # hooking QQ). Reap our own orphans before spawning a duplicate.
+        orphans = await asyncio.to_thread(self._kill_orphans)
+        if orphans:
+            self._log(f"[start] 已清理 {len(orphans)} 个残留 SnowLuma 进程")
         if not self.is_installed():
             self._record_error("尚未安装 SnowLuma：请先在插件页面选择版本并安装")
             return False
