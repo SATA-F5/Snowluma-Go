@@ -6,7 +6,7 @@ desc: >-
   登录 / 挂载 QQ 进程 / 写入反向 WS 连接 / 热重载」全部自动化：不再手改 JSON，
   而是直接调用 SnowLuma 官方 WebUI REST API 完成配置与热重载，全程支持
   Windows / Linux，可管理多个 QQ 账号，并提供内嵌控制台页面。
-version: 1.0.2
+version: 1.0.3
 author: SATA-F5
 repo: https://github.com/SATA-F5/Snowluma-Go
 astrbot_version: ">=4.24.1"
