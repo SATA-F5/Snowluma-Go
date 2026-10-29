@@ -92,9 +92,9 @@
     },
     "qq_display": {
         "type": "string",
-        "description": "Linux 下启动 QQ 使用的 DISPLAY（可选）",
-        "default": "",
-        "hint": "无桌面 Ubuntu 服务器建议留空或填 :99。插件会自动启动 Xvfb，并在 WebUI 里提供截图二维码；也可以配合手动启动的 VNC 使用。"
+        "description": "Linux 下启动 QQ 使用的 DISPLAY（默认 99 = :99）",
+        "default": "99",
+        "hint": "默认持久化为 99（等价于 :99），插件会自动启动 Xvfb 并在 WebUI 里提供二维码截图；只有需要连接已有 VNC / 远程 X11 时才改成别的值。"
     },
     "vnc_port": {
         "type": "int",

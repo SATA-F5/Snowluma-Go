@@ -871,6 +871,12 @@ class SnowLumaGoPlugin(Star):
             else:
                 config[key] = default
 
+        # Keep the DISPLAY setting non-empty so the WebUI always shows and
+        # persists the value it will actually use (99 == :99).
+        if not str(config.get("qq_display") or "").strip():
+            config["qq_display"] = DEFAULT_CONFIG["qq_display"]
+            self._overrides.add("qq_display")
+
         for key in SECRET_KEYS:
             stored = str(persisted.get(key) or object_values.get(key) or "")
             plain = decrypt_secret(stored) if stored else ""

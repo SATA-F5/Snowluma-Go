@@ -65,7 +65,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "external_host": "127.0.0.1",
     "external_port": DEFAULT_SNOWLUMA_PORT,
     "qq_path": "",
-    "qq_display": "",
+    "qq_display": "99",
     "vnc_port": 5900,
     "vnc_password": "",
     "qq_number": "",
