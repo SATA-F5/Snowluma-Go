@@ -1153,6 +1153,29 @@ class QQManager:
                 timeout=8,
             )
 
+        def click_at(x: int, y: int) -> subprocess.CompletedProcess:
+            # Move, focus the window under the cursor (fluxbox click-to-focus
+            # otherwise swallows the first click), then click.
+            call(["mousemove", "--sync", str(x), str(y)])
+            try:
+                loc = subprocess.run(
+                    [xdotool, "getmouselocation", "--shell"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                window_id = ""
+                for line in (loc.stdout or "").splitlines():
+                    if line.startswith("WINDOW="):
+                        window_id = line.split("=", 1)[1].strip()
+                        break
+                if window_id:
+                    call(["windowfocus", window_id])
+            except Exception:
+                pass
+            return call(["click", "--clearmodifiers", "1"])
+
         try:
             if kind == "click":
                 try:
@@ -1162,9 +1185,7 @@ class QQManager:
                     return {"ok": False, "message": "坐标无效"}
                 if x < 0 or y < 0 or x > 20000 or y > 20000:
                     return {"ok": False, "message": "坐标超出范围"}
-                result = await asyncio.to_thread(
-                    call, ["mousemove", str(x), str(y), "click", "1"]
-                )
+                result = await asyncio.to_thread(click_at, x, y)
             elif kind == "key":
                 key = str(payload.get("key") or "")
                 allowed = {
@@ -1196,7 +1217,18 @@ class QQManager:
             return {"ok": False, "message": shorten(str(exc), 160)}
         if result.returncode != 0:
             detail = (result.stderr or b"").decode("utf-8", errors="ignore").strip()
+            self.manager._log(
+                f"[qq] [warn] xdotool 失败（{kind}）: {shorten(detail or 'no output', 200)}",
+                "warning",
+            )
             return {"ok": False, "message": shorten(detail or "xdotool 执行失败", 180)}
+        if kind in ("click", "key"):
+            detail = ""
+            if kind == "click":
+                detail = f"({payload.get('x')},{payload.get('y')})"
+            else:
+                detail = str(payload.get("key") or "")
+            self.manager._log(f"[qq] 远程操作: {kind} {detail}".rstrip())
         return {"ok": True}
 
     async def restart_qq(self, password: str = "") -> Dict[str, Any]:

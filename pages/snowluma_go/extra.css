@@ -102,6 +102,7 @@ a { color: var(--primary-light); }
     max-width: 100%;
     max-height: 520px;
     border-radius: 8px;
+    cursor: pointer;
 }
 .qq-qr-wrap img.visible { display: block; }
 .qq-live-wrap { display: none; }

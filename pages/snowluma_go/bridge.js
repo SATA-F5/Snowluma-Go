@@ -1200,6 +1200,11 @@
                 : (info.running ? "未安装 xdotool，请点「安装 Linux 依赖」" : "VNC 未就绪");
         }
         if (!S.qqLiveAvailable) setQQLive(false);
+        if (info.running && !info.input_available) {
+            hint.textContent += "\n\n未安装 xdotool，无法在页面内点击；请到「配置 → 维护与帮助 → 安装 Linux 依赖」后再试。";
+        } else if (S.qqLiveAvailable) {
+            hint.textContent += "\n\n提示：点「页面内操作」后，点击画面即可操作 QQ。";
+        }
     }
 
     let qqLiveTimer = null;
@@ -1259,11 +1264,28 @@
 
     async function sendQQInput(payload) {
         const result = await run("qq-input", () => apiPost("qq/input", payload, 15000));
-        if (result && !result.ok) toast(result.message || "操作失败", "err", 3000);
+        if (result && result.ok) {
+            const action = payload.type === "click"
+                ? "click " + payload.x + "," + payload.y
+                : payload.type + " " + (payload.key || payload.text || "");
+            console.debug("[snowluma] input ok:", action);
+        } else if (result) {
+            toast(result.message || "操作失败", "err", 4000);
+        }
         return result;
     }
 
     function bindQQLiveEvents() {
+        const still = $("qq-qr-image");
+        if (still) {
+            still.addEventListener("click", () => {
+                if (S.qqLiveAvailable) {
+                    setQQLive(true);
+                } else {
+                    toast("实时操作不可用：请先安装 xdotool（配置 → 维护与帮助 → 安装 Linux 依赖）", "warn", 4500);
+                }
+            });
+        }
         const img = $("qq-live-image");
         if (img) {
             img.addEventListener("click", (event) => {
@@ -1371,7 +1393,7 @@
     async function actionInstallDeps() {
         if (!(await confirmDialog(
             "将使用 sudo apt-get 安装 xvfb、x11vnc、fluxbox、openbox、dbus-x11、" +
-            "libcap2-bin、scrot、imagemagick、x11-utils，可能需要几分钟。继续？",
+            "libcap2-bin、scrot、imagemagick、x11-utils、xdotool，可能需要几分钟。继续？",
             "安装依赖"
         ))) return;
         const enc = await promptSudo("安装 Linux 依赖需要 sudo 密码（仅本次使用）");
