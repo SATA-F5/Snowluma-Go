@@ -55,7 +55,7 @@ from .utils import (
     write_json,
 )  # noqa: F401  (read_json/write_json are kept for future migrations)
 
-PLUGIN_CODE_VERSION = "1.0.6"
+PLUGIN_CODE_VERSION = "1.0.4"
 
 # Bump together with ONBOARD_VERSION in bridge.js so upgraded users get the
 # refreshed guide exactly once.

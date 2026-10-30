@@ -1,28 +1,17 @@
 # 更新日志
 
-## 1.0.6
+## 1.0.4
 
-- 「QQ 登录 → 页面内操作」刷新间隔改为 **0.5 秒**
-- 实时画面改为串行、自调度的异步轮询：上一帧完成后才发下一帧，慢请求不会叠加
-- 后端截图增加互斥锁，多个标签页同时查看也不会并发抓屏
-- JPEG 质量调整为 65，降低 0.5 秒刷新下的带宽与解码开销
-
-## 1.0.5
-
-- 「QQ 登录」的实时操作改为 **HTTP 截图 + `xdotool`**，不再依赖 iframe / noVNC / WebSocket，在 AstrBot 的受限 iframe 内也能使用
+- 「QQ 登录」的实时操作改为 **HTTP 截图 + `xdotool`**，不依赖 iframe / noVNC / WebSocket，在 AstrBot 的受限 iframe 内也能使用
   - 点击画面即点击虚拟屏幕，支持 Enter / Tab / Esc / Backspace 和文字输入
   - 点击前先聚焦鼠标下的窗口，兼容 fluxbox 的 click-to-focus，避免第一次点击被吞
   - 静态截图也可点击进入实时模式；未安装 `xdotool` 时明确提示
+- 实时画面 **0.5 秒刷新**：串行、自调度的异步轮询，上一帧完成后才发下一帧，慢请求不会叠加
+- 后端截图增加互斥锁，多个标签页同时查看也不会并发抓屏；JPEG 质量 65
 - 修复 x11vnc 在 Wayland 会话环境误判退出（`Wayland display server detected`）：清理 `WAYLAND_DISPLAY` 并设置 `XDG_SESSION_TYPE=x11`
 - 修复旧窗口管理器占用 `:99` 导致 fluxbox 启动失败：不再因为服务环境存在 `DISPLAY` 而跳过清理
 - 「安装 Linux 依赖」加入 `xdotool`
-- 移除 1.0.4 的 noVNC / websockify 方案
-
-## 1.0.4
-
-- 尝试用 noVNC + websockify 在「QQ 登录」弹窗内嵌实时画面（iframe）
-- 新增 `novnc_port` 配置与 websockify 清理逻辑
-- 该方案在 AstrBot 的受限 iframe 中不可用，1.0.5 起已移除
+- 移除临时的 noVNC / websockify 方案
 
 ## 1.0.3
 
