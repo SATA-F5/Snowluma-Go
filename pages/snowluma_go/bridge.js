@@ -31,7 +31,7 @@
         onboarding: { steps: [], idx: 0 },
         context: {},
         qqVncAddress: "",
-        qqNovncUrl: "",
+        qqLiveAvailable: false,
     };
 
     // ------------------------------------------------------------------
@@ -729,7 +729,7 @@
             ["s-install-dir", "安装目录", "本插件托管的 SnowLuma 程序目录；config/、data/ 等用户数据会保留。"],
             ["s-astrbot-path", "AstrBot 配置", "插件探测到的 AstrBot cmd_config.json 路径。"],
             ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会在 Xvfb 虚拟显示中启动。"],
-            ["btn-qq-login", "QQ 登录", "无桌面服务器可直接查看二维码；点「页面内操作」可在弹窗里实时点登录 / 切换扫码（需 novnc / websockify）。"],
+            ["btn-qq-login", "QQ 登录", "无桌面服务器可直接查看二维码；点「页面内操作」可在弹窗里实时点登录 / 切换扫码（需 xdotool）。"],
             ["btn-hook-all", "全部挂载", "让 SnowLuma 挂载所有可用的 QQ 进程。"],
             ["btn-open-config", "配置", "修改运行方式、账号、VNC、自动化等选项；安装与下载镜像在「维护与帮助 → 下载与安装」。"],
             ["log-container", "实时日志", "插件与 SnowLuma 的运行日志，出错时先看这里。"],
@@ -1189,55 +1189,112 @@
                 "；二维码截图仍可直接使用。";
         }
 
-        // Embedded live view (noVNC served by websockify).
-        S.qqNovncUrl = "";
-        const novnc = info.novnc || {};
+        // Live control inside the panel: HTTP screenshots + xdotool. This works
+        // inside AstrBot's sandboxed iframe (no nested iframe / WebSocket).
+        S.qqLiveAvailable = !!(info.running && info.input_available);
         const liveBtn = $("btn-qq-live");
-        if (info.running && novnc.running) {
-            const host = window.location.hostname || "127.0.0.1";
-            const remote = !LOCAL_HOSTS.includes(host);
-            if (!(novnc.local_only && remote)) {
-                S.qqNovncUrl = "http://" + host + ":" + novnc.port +
-                    "/vnc.html?autoconnect=1&resize=scale&path=websockify";
-            }
-        }
         if (liveBtn) {
-            liveBtn.disabled = !S.qqNovncUrl;
-            liveBtn.title = S.qqNovncUrl
+            liveBtn.disabled = !S.qqLiveAvailable;
+            liveBtn.title = S.qqLiveAvailable
                 ? "在弹窗内实时操作 QQ"
-                : (novnc.available ? "VNC 未就绪" : "未安装 novnc / websockify");
+                : (info.running ? "未安装 xdotool，请点「安装 Linux 依赖」" : "VNC 未就绪");
         }
-        if (S.qqNovncUrl) {
-            vnc.textContent += (vnc.textContent ? " · " : "") + "实时画面：" + S.qqNovncUrl;
+        if (!S.qqLiveAvailable) setQQLive(false);
+    }
+
+    let qqLiveTimer = null;
+    let qqLiveBusy = false;
+
+    async function refreshQQLiveFrame() {
+        if (qqLiveBusy || !S.qqLiveAvailable) return;
+        qqLiveBusy = true;
+        try {
+            const data = await apiGet("qq/screen");
+            if (data && data.ok && data.image) {
+                const img = $("qq-live-image");
+                if (img) {
+                    img.src = data.image;
+                    if (data.width) img.dataset.width = String(data.width);
+                    if (data.height) img.dataset.height = String(data.height);
+                }
+            }
+        } catch (error) { /* keep polling */ }
+        qqLiveBusy = false;
+    }
+
+    function stopQQLivePolling() {
+        if (qqLiveTimer) {
+            clearInterval(qqLiveTimer);
+            qqLiveTimer = null;
         }
-        if (!S.qqNovncUrl) setQQLive(false);
     }
 
     function setQQLive(on) {
         const modal = $("qq-login-modal");
-        const frame = $("qq-live-frame");
         const btn = $("btn-qq-live");
-        if (!modal || !frame || !btn) return;
-        const enable = !!on && !!S.qqNovncUrl;
+        if (!modal || !btn) return;
+        const enable = !!on && !!S.qqLiveAvailable;
         modal.classList.toggle("live", enable);
         btn.textContent = enable ? "切回截图" : "页面内操作";
         if (enable) {
-            if (frame.getAttribute("src") !== S.qqNovncUrl) {
-                frame.setAttribute("src", S.qqNovncUrl);
-            }
+            refreshQQLiveFrame();
+            stopQQLivePolling();
+            qqLiveTimer = setInterval(refreshQQLiveFrame, 900);
         } else {
-            frame.removeAttribute("src");
+            stopQQLivePolling();
+            const img = $("qq-live-image");
+            if (img) img.removeAttribute("src");
         }
     }
 
     function toggleQQLive() {
         const modal = $("qq-login-modal");
         if (!modal) return;
-        if (!S.qqNovncUrl) {
-            toast("实时画面不可用：请先安装 novnc / websockify 并设置 VNC 密码", "warn", 4000);
+        if (!S.qqLiveAvailable) {
+            toast("实时操作不可用：请先启动 QQ 并安装 xdotool（安装 Linux 依赖）", "warn", 4000);
             return;
         }
         setQQLive(!modal.classList.contains("live"));
+    }
+
+    async function sendQQInput(payload) {
+        const result = await run("qq-input", () => apiPost("qq/input", payload, 15000));
+        if (result && !result.ok) toast(result.message || "操作失败", "err", 3000);
+        return result;
+    }
+
+    function bindQQLiveEvents() {
+        const img = $("qq-live-image");
+        if (img) {
+            img.addEventListener("click", (event) => {
+                if (!S.qqLiveAvailable) return;
+                const rect = img.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                const naturalW = Number(img.dataset.width) || img.naturalWidth || rect.width;
+                const naturalH = Number(img.dataset.height) || img.naturalHeight || rect.height;
+                const x = Math.round((event.clientX - rect.left) * naturalW / rect.width);
+                const y = Math.round((event.clientY - rect.top) * naturalH / rect.height);
+                sendQQInput({ type: "click", x: x, y: y });
+            });
+        }
+        document.querySelectorAll("[data-qqkey]").forEach((btn) => {
+            btn.addEventListener("click", () =>
+                sendQQInput({ type: "key", key: btn.dataset.qqkey })
+            );
+        });
+        const text = $("qq-live-text");
+        if (text) {
+            text.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                const value = text.value;
+                if (!value) return;
+                text.value = "";
+                sendQQInput({ type: "type", text: value }).then(() => {
+                    sendQQInput({ type: "key", key: "Return" });
+                });
+            });
+        }
     }
 
     function openQQLoginModal() {
@@ -1617,7 +1674,6 @@
         ["qq_path", "value"],
         ["qq_display", "value"],
         ["vnc_port", "number"],
-        ["novnc_port", "number"],
         ["astrbot_config_path", "value"],
         ["ws_host_override", "value"],
         ["sync_connection_name", "value"],
@@ -1758,6 +1814,7 @@
         $("btn-copy-qq-vnc").addEventListener("click", actionCopyQQVnc);
         $("btn-close-qq-login").addEventListener("click", closeQQLoginModal);
         $("btn-qq-live").addEventListener("click", toggleQQLive);
+        bindQQLiveEvents();
         $("btn-replay-guide").addEventListener("click", () => {
             closeConfig();
             startOnboarding();

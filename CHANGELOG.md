@@ -1,5 +1,14 @@
 # 更新日志
 
+## 1.0.5
+
+- 「QQ 登录」的实时操作改为 **HTTP 截图 + `xdotool`**：不再依赖 iframe / noVNC / WebSocket，在 AstrBot 的受限 iframe 内也能正常工作
+  - 点击画面即发送鼠标点击；支持 Enter / Tab / Esc / Backspace 与文字输入
+  - 约每秒刷新一次 JPEG 截图，不需要安装 novnc / websockify
+- 「安装 Linux 依赖」改为安装 `xdotool`
+- 修复 x11vnc 在 Wayland 会话环境下直接退出（`Wayland display server detected ... Exiting`）：启动 x11vnc 时清理 `WAYLAND_DISPLAY` 并设置 `XDG_SESSION_TYPE=x11`
+- 修复旧窗口管理器占用 `:99` 导致 fluxbox 启动失败：不再因为服务环境里存在 `DISPLAY` 就跳过清理
+
 ## 1.0.4
 
 - 新增 noVNC 实时画面：插件用 `websockify` 把 `:99` 的 x11vnc 转成网页，并在「QQ 登录」弹窗里用 iframe 嵌入，可直接点登录 / 切换扫码

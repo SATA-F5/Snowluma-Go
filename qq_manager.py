@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from astrbot.api import logger
 
@@ -369,8 +369,6 @@ class QQManager:
         self._xvfb_proc: Optional[subprocess.Popen] = None
         self._openbox_proc: Optional[subprocess.Popen] = None
         self._vnc_proc: Optional[subprocess.Popen] = None
-        self._novnc_proc: Optional[subprocess.Popen] = None
-        self._novnc_port = 0
         self._vnc_local_only = True
         self._display = ""
         self._wm_name = ""
@@ -465,7 +463,7 @@ class QQManager:
         Two window managers fighting over the same display keeps QQ's login
         dialog unmapped, which looks exactly like a black VNC frame.
         """
-        if IS_WINDOWS or os.environ.get("DISPLAY"):
+        if IS_WINDOWS:
             return
         current_uid = os.getuid() if hasattr(os, "getuid") else None
         our_pid = os.getpid()
@@ -630,6 +628,10 @@ class QQManager:
             return display
 
         env = {**os.environ, "DISPLAY": display}
+        # x11vnc exits with "Wayland display server detected" when the service
+        # environment advertises Wayland, even though DISPLAY points at Xvfb.
+        env.pop("WAYLAND_DISPLAY", None)
+        env["XDG_SESSION_TYPE"] = "x11"
         # SnowLuma's manual Linux guide uses fluxbox specifically; openbox is
         # only a fallback. Without a real WM the QQ login dialog often never
         # gets mapped, which is exactly a black VNC screen. If fluxbox was
@@ -789,107 +791,8 @@ class QQManager:
             except Exception as exc:
                 self.manager._log(f"[qq] [warn] 启动 x11vnc 失败: {shorten(str(exc), 140)}", "warning")
                 self._vnc_proc = None
-        self._start_novnc()
         self._display = display
         return display
-
-    @staticmethod
-    def novnc_webroot() -> str:
-        for root in ("/usr/share/novnc", "/usr/local/share/novnc", "/opt/novnc"):
-            try:
-                if (Path(root) / "vnc.html").is_file():
-                    return root
-            except OSError:
-                continue
-        return ""
-
-    def _vnc_password_configured(self) -> bool:
-        raw = str(self.manager.plugin.config.get("vnc_password", "") or "")
-        try:
-            return bool(decrypt_secret(raw)) if raw else False
-        except Exception:
-            return False
-
-    def _start_novnc(self) -> None:
-        """Serve noVNC over websockify so the panel can embed a live view."""
-        if IS_WINDOWS:
-            return
-        if self._novnc_proc is not None and self._novnc_proc.poll() is None:
-            return
-        try:
-            port = int(self.manager.plugin.config.get("novnc_port", 6081) or 6081)
-        except (TypeError, ValueError):
-            port = 6081
-        if port_is_open("127.0.0.1", port, timeout=0.2):
-            self._novnc_port = port
-            return
-        websockify = find_binary("websockify")
-        webroot = self.novnc_webroot()
-        if not websockify or not webroot:
-            self.manager._log(
-                "[qq] [warn] 未安装 noVNC / websockify，无法在页面内实时操作 QQ；"
-                "可点「安装 Linux 依赖」",
-                "warning",
-            )
-            return
-        try:
-            vnc_port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
-        except (TypeError, ValueError):
-            vnc_port = 5900
-        bind = "127.0.0.1" if self._vnc_local_only and not self._vnc_password_configured() else "0.0.0.0"
-        log_path = self.manager.persistent_dir / "websockify.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            log_path.write_bytes(b"")
-        except Exception:
-            pass
-        args = [
-            websockify,
-            f"--web={webroot}",
-            f"{bind}:{port}",
-            f"127.0.0.1:{vnc_port}",
-        ]
-        try:
-            with open(log_path, "ab") as log:
-                self._novnc_proc = subprocess.Popen(
-                    args,
-                    stdout=log,
-                    stderr=log,
-                    start_new_session=True,
-                )
-            time.sleep(0.8)
-            code = self._novnc_proc.poll()
-            if code is not None:
-                self.manager._log(
-                    f"[qq] [warn] websockify 启动失败（code={code}）: "
-                    f"{shorten(self._tail_log(log_path), 300)}",
-                    "warning",
-                )
-                self._novnc_proc = None
-                return
-            self._novnc_port = port
-            self.manager._log(
-                f"[qq] 已启动 noVNC: http://{bind}:{port}/vnc.html"
-                + ("（仅本机）" if self._vnc_local_only else "")
-            )
-        except Exception as exc:
-            self.manager._log(
-                f"[qq] [warn] 启动 websockify 失败: {shorten(str(exc), 140)}",
-                "warning",
-            )
-            self._novnc_proc = None
-
-    def _stop_novnc(self) -> None:
-        if self._novnc_proc is not None and self._novnc_proc.poll() is None:
-            try:
-                self._novnc_proc.terminate()
-                self._novnc_proc.wait(timeout=2)
-            except Exception:
-                try:
-                    self._novnc_proc.kill()
-                except Exception:
-                    pass
-        self._novnc_proc = None
 
     async def vnc_info(self) -> Dict[str, Any]:
         if self._vnc_proc is not None and self._vnc_proc.poll() is not None:
@@ -904,24 +807,14 @@ class QQManager:
             port = int(self.manager.plugin.config.get("vnc_port", 5900) or 5900)
         except (TypeError, ValueError):
             port = 5900
-        try:
-            novnc_port = int(self.manager.plugin.config.get("novnc_port", 6081) or 6081)
-        except (TypeError, ValueError):
-            novnc_port = 6081
-        novnc_available = bool(find_binary("websockify") and self.novnc_webroot())
         return {
             "port": port,
             "display": self._display or self._display_name(),
             "running": await asyncio.to_thread(port_is_open, "127.0.0.1", port, 0.2),
             "local_only": self._vnc_local_only,
-            "novnc": {
-                "available": novnc_available,
-                "running": await asyncio.to_thread(
-                    port_is_open, "127.0.0.1", novnc_port, 0.2
-                ),
-                "port": novnc_port,
-                "local_only": self._vnc_local_only and not self._vnc_password_configured(),
-            },
+            # Live control inside the panel uses HTTP screenshots + xdotool,
+            # which works inside AstrBot's sandboxed iframe (no WebSocket).
+            "input_available": bool(find_binary("xdotool")),
         }
 
     def _image_mean(self, path: Path) -> Optional[float]:
@@ -1166,6 +1059,145 @@ class QQManager:
             except Exception:
                 continue
         return False
+
+    def _display_geometry(self, display: str) -> Tuple[int, int]:
+        xdotool = find_binary("xdotool")
+        if xdotool:
+            try:
+                env = {**os.environ, "DISPLAY": display, "XDG_SESSION_TYPE": "x11"}
+                env.pop("WAYLAND_DISPLAY", None)
+                result = subprocess.run(
+                    [xdotool, "getdisplaygeometry"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                parts = (result.stdout or "").split()
+                if len(parts) == 2:
+                    return int(parts[0]), int(parts[1])
+            except Exception:
+                pass
+        return 0, 0
+
+    def _capture_live(self, display: str, path: Path) -> bool:
+        """Grab the display as a small JPEG for the in-panel live view."""
+        png = path.with_suffix(".png")
+        if not self._capture_display(display, png):
+            return False
+        convert = find_binary("convert") or find_binary("magick")
+        if convert:
+            try:
+                result = subprocess.run(
+                    [convert, str(png), "-quality", "72", str(path)],
+                    capture_output=True,
+                    timeout=12,
+                )
+                if result.returncode == 0 and path.is_file() and path.stat().st_size > 1024:
+                    try:
+                        png.unlink()
+                    except Exception:
+                        pass
+                    return True
+            except Exception:
+                pass
+        # No ImageMagick: fall back to the PNG frame.
+        try:
+            png.replace(path)
+        except Exception:
+            return False
+        return path.is_file()
+
+    async def remote_screen(self) -> Dict[str, Any]:
+        """Screenshot for the panel's HTTP live view (no WebSocket needed)."""
+        if IS_WINDOWS:
+            return {"ok": False, "message": "该功能仅支持 Linux"}
+        display = await asyncio.to_thread(self.ensure_display)
+        if not display:
+            return {"ok": False, "message": "没有可用的虚拟显示"}
+        path = self.manager.persistent_dir / "qq-live.jpg"
+        ok = await asyncio.to_thread(self._capture_live, display, path)
+        if not ok:
+            return {"ok": False, "message": "截图失败，请查看 Xvfb 日志"}
+        width, height = await asyncio.to_thread(self._display_geometry, display)
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        mime = "image/jpeg" if path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+        return {
+            "ok": True,
+            "image": f"data:{mime};base64,{encoded}",
+            "width": width,
+            "height": height,
+            "display": display,
+        }
+
+    async def remote_input(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Send a click / key / typed text to the virtual display via xdotool."""
+        if IS_WINDOWS:
+            return {"ok": False, "message": "该功能仅支持 Linux"}
+        xdotool = find_binary("xdotool")
+        if not xdotool:
+            return {
+                "ok": False,
+                "message": "未安装 xdotool，请点「安装 Linux 依赖」",
+            }
+        display = self._display or self._display_name()
+        env = {**os.environ, "DISPLAY": display, "XDG_SESSION_TYPE": "x11"}
+        env.pop("WAYLAND_DISPLAY", None)
+        kind = str(payload.get("type") or "").strip()
+
+        def call(args: List[str]) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                [xdotool, *args],
+                env=env,
+                capture_output=True,
+                timeout=8,
+            )
+
+        try:
+            if kind == "click":
+                try:
+                    x = int(payload.get("x", 0))
+                    y = int(payload.get("y", 0))
+                except (TypeError, ValueError):
+                    return {"ok": False, "message": "坐标无效"}
+                if x < 0 or y < 0 or x > 20000 or y > 20000:
+                    return {"ok": False, "message": "坐标超出范围"}
+                result = await asyncio.to_thread(
+                    call, ["mousemove", str(x), str(y), "click", "1"]
+                )
+            elif kind == "key":
+                key = str(payload.get("key") or "")
+                allowed = {
+                    "Return",
+                    "Tab",
+                    "Escape",
+                    "BackSpace",
+                    "space",
+                    "Up",
+                    "Down",
+                    "Left",
+                    "Right",
+                    "Page_Up",
+                    "Page_Down",
+                }
+                if key not in allowed:
+                    return {"ok": False, "message": "不支持的按键"}
+                result = await asyncio.to_thread(call, ["key", key])
+            elif kind == "type":
+                text = str(payload.get("text") or "")
+                if not text or len(text) > 200:
+                    return {"ok": False, "message": "文本为空或过长"}
+                result = await asyncio.to_thread(
+                    call, ["type", "--delay", "40", "--", text]
+                )
+            else:
+                return {"ok": False, "message": "不支持的操作"}
+        except Exception as exc:
+            return {"ok": False, "message": shorten(str(exc), 160)}
+        if result.returncode != 0:
+            detail = (result.stderr or b"").decode("utf-8", errors="ignore").strip()
+            return {"ok": False, "message": shorten(detail or "xdotool 执行失败", 180)}
+        return {"ok": True}
 
     async def restart_qq(self, password: str = "") -> Dict[str, Any]:
         """Restart QQ so it moves onto the plugin's managed virtual display."""
@@ -1624,7 +1656,6 @@ class QQManager:
         return result
 
     def stop_vnc(self) -> None:
-        self._stop_novnc()
         if self._vnc_proc is not None and self._vnc_proc.poll() is None:
             try:
                 self._vnc_proc.terminate()
@@ -1633,7 +1664,7 @@ class QQManager:
         self._vnc_proc = None
 
     def shutdown_display(self) -> None:
-        for proc in (self._novnc_proc, self._vnc_proc, self._openbox_proc, self._xvfb_proc):
+        for proc in (self._vnc_proc, self._openbox_proc, self._xvfb_proc):
             if proc is None:
                 continue
             try:
@@ -1649,7 +1680,6 @@ class QQManager:
             except Exception:
                 pass
         self._vnc_proc = None
-        self._novnc_proc = None
         self._openbox_proc = None
         self._xvfb_proc = None
         self._wm_name = ""
@@ -1689,31 +1719,6 @@ class QQManager:
                     killed.append(pid)
                 except Exception:
                     pass
-        # websockify (noVNC) does not carry the display name; match its command
-        # line against the configured noVNC port instead.
-        try:
-            novnc_port = int(self.manager.plugin.config.get("novnc_port", 6081) or 6081)
-        except (TypeError, ValueError):
-            novnc_port = 6081
-        for pid in list_pids_by_name("websockify"):
-            if pid in killed:
-                continue
-            uid = process_uid(pid)
-            if current_uid is not None and uid is not None and uid != current_uid:
-                continue
-            try:
-                cmdline = Path(f"/proc/{int(pid)}/cmdline").read_bytes().replace(
-                    b"\x00", b" "
-                ).decode("utf-8", errors="ignore")
-            except Exception:
-                continue
-            if f":{novnc_port}" not in cmdline and "novnc" not in cmdline.lower():
-                continue
-            try:
-                kill_pid_tree(pid)
-                killed.append(pid)
-            except Exception:
-                pass
         # On a headless host, orphaned window managers from a previous plugin
         # process can prevent fluxbox from taking over the display.
         if not os.environ.get("DISPLAY"):

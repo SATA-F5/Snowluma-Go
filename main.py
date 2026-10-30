@@ -55,7 +55,7 @@ from .utils import (
     write_json,
 )  # noqa: F401  (read_json/write_json are kept for future migrations)
 
-PLUGIN_CODE_VERSION = "1.0.4"
+PLUGIN_CODE_VERSION = "1.0.5"
 
 # Bump together with ONBOARD_VERSION in bridge.js so upgraded users get the
 # refreshed guide exactly once.
@@ -152,6 +152,8 @@ class SnowLumaGoPlugin(Star):
             ("qq/cleanup", self.api_qq_cleanup, ["POST"], "清理当前用户的 QQ 进程"),
             ("qq/restart", self.api_qq_restart, ["POST"], "重启 QQ 到虚拟显示"),
             ("qq/login-qr", self.api_qq_login_qr, ["POST"], "截取 QQ 登录二维码"),
+            ("qq/screen", self.api_qq_screen, ["GET"], "获取 QQ 实时画面"),
+            ("qq/input", self.api_qq_input, ["POST"], "操作 QQ 虚拟显示"),
             ("qq/repair-ui", self.api_qq_repair_ui, ["POST"], "修复 QQ 登录界面"),
             ("linux/fix-permissions", self.api_linux_fix_permissions, ["POST"], "修复 QQ 权限"),
             ("linux/install-deps", self.api_linux_install_deps, ["POST"], "安装 Linux 依赖"),
@@ -556,6 +558,21 @@ class SnowLumaGoPlugin(Star):
         except Exception as exc:
             return error_response(f"截取 QQ 登录二维码失败: {shorten(str(exc), 200)}")
 
+    async def api_qq_screen(self):
+        try:
+            return json_response(await self.manager.qq.remote_screen())
+        except Exception as exc:
+            return error_response(f"获取实时画面失败: {shorten(str(exc), 200)}")
+
+    async def api_qq_input(self):
+        try:
+            payload = await request.json(default={})
+            if not isinstance(payload, dict):
+                payload = {}
+            return json_response(await self.manager.qq.remote_input(payload))
+        except Exception as exc:
+            return error_response(f"操作虚拟显示失败: {shorten(str(exc), 200)}")
+
     async def api_qq_repair_ui(self):
         try:
             _payload, password, sudo_err = await self._read_sudo_payload()
@@ -750,7 +767,7 @@ class SnowLumaGoPlugin(Star):
                     self.manager.api.token = ""
             elif key == "vnc_password":
                 self.manager.qq.stop_vnc()
-        if "vnc_port" in payload or "novnc_port" in payload:
+        if "vnc_port" in payload:
             self.manager.qq.stop_vnc()
 
         self.manager._installed_version = ""
