@@ -1,5 +1,11 @@
 # 更新日志
 
+## 1.0.4
+
+- 新增 noVNC 实时画面：插件用 `websockify` 把 `:99` 的 x11vnc 转成网页，并在「QQ 登录」弹窗里用 iframe 嵌入，可直接点登录 / 切换扫码
+- 新增 `novnc_port` 配置（默认 6081）；「安装 Linux 依赖」自动安装 `novnc` 与 `websockify`，清理残留时一并清理 websockify
+- 「QQ 登录」弹窗新增「页面内操作 / 切回截图」切换；VNC 未设密码时仅本机可用，设置密码后局域网可用
+
 ## 1.0.3
 
 - 启动流程（SnowLuma 启动 / 重启 / 安装后启动）与每次启动 QQ 前自动检测 NapCat 注入：当 `resources/app/package.json` 指向 `loadNapCat.js` 且 `napcat/napcat.mjs` 缺失时，自动恢复 QQ 原始入口（需 sudo），避免 QQ 不创建登录窗口

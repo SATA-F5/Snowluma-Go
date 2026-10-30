@@ -170,6 +170,10 @@ def missing_linux_deps() -> List[str]:
         missing.append("fluxbox")
     if not any(have_binary(name) for name in ("scrot", "import", "ffmpeg")):
         missing.append("scrot/imagemagick")
+    if not have_binary("websockify"):
+        missing.append("websockify")
+    if not Path("/usr/share/novnc/vnc.html").is_file():
+        missing.append("novnc")
     return missing
 
 
@@ -202,6 +206,8 @@ async def install_linux_deps(plugin: Any, password: str = "") -> Dict[str, Any]:
             "scrot",
             "imagemagick",
             "x11-utils",
+            "novnc",
+            "websockify",
         ],
         password,
         timeout=600,
@@ -210,7 +216,7 @@ async def install_linux_deps(plugin: Any, password: str = "") -> Dict[str, Any]:
         {
             "command": (
                 "apt-get install -y xvfb x11vnc fluxbox openbox dbus-x11 "
-                "libcap2-bin scrot imagemagick x11-utils"
+                "libcap2-bin scrot imagemagick x11-utils novnc websockify"
             ),
             "ok": code == 0,
             "output": output,

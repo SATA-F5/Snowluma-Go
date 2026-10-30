@@ -104,6 +104,16 @@ a { color: var(--primary-light); }
     border-radius: 8px;
 }
 .qq-qr-wrap img.visible { display: block; }
+.qq-live-wrap { display: none; }
+#qq-login-modal.live .qq-qr-wrap { display: none; }
+#qq-login-modal.live .qq-live-wrap { display: block; }
+.qq-live-wrap iframe {
+    width: 100%;
+    height: 460px;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: #11111b;
+}
 #qq-login-hint {
     white-space: pre-wrap;
     max-height: 150px;

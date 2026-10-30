@@ -102,6 +102,12 @@
         "default": 5900,
         "hint": "插件在无显示环境启动 x11vnc 时使用；WebUI 会显示该端口。"
     },
+    "novnc_port": {
+        "type": "int",
+        "description": "noVNC 网页端口",
+        "default": 6081,
+        "hint": "插件用 websockify 把 VNC 转成网页，可直接在「QQ 登录」弹窗里操作 QQ；需要安装 novnc / websockify。"
+    },
     "vnc_password": {
         "type": "string",
         "description": "VNC 密码（可选）",

@@ -55,7 +55,7 @@ from .utils import (
     write_json,
 )  # noqa: F401  (read_json/write_json are kept for future migrations)
 
-PLUGIN_CODE_VERSION = "1.0.3"
+PLUGIN_CODE_VERSION = "1.0.4"
 
 # Bump together with ONBOARD_VERSION in bridge.js so upgraded users get the
 # refreshed guide exactly once.
@@ -750,7 +750,7 @@ class SnowLumaGoPlugin(Star):
                     self.manager.api.token = ""
             elif key == "vnc_password":
                 self.manager.qq.stop_vnc()
-        if "vnc_port" in payload:
+        if "vnc_port" in payload or "novnc_port" in payload:
             self.manager.qq.stop_vnc()
 
         self.manager._installed_version = ""

@@ -67,6 +67,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "qq_path": "",
     "qq_display": "99",
     "vnc_port": 5900,
+    "novnc_port": 6081,
     "vnc_password": "",
     "qq_number": "",
     "astrbot_config_path": "",

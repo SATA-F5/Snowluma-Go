@@ -31,6 +31,7 @@
         onboarding: { steps: [], idx: 0 },
         context: {},
         qqVncAddress: "",
+        qqNovncUrl: "",
     };
 
     // ------------------------------------------------------------------
@@ -728,7 +729,7 @@
             ["s-install-dir", "安装目录", "本插件托管的 SnowLuma 程序目录；config/、data/ 等用户数据会保留。"],
             ["s-astrbot-path", "AstrBot 配置", "插件探测到的 AstrBot cmd_config.json 路径。"],
             ["btn-qq-launch", "启动 QQ", "启动 QQNT；Linux 无桌面时会在 Xvfb 虚拟显示中启动。"],
-            ["btn-qq-login", "QQ 登录", "无桌面服务器可直接在这里查看 QQ 登录二维码并扫码。"],
+            ["btn-qq-login", "QQ 登录", "无桌面服务器可直接查看二维码；点「页面内操作」可在弹窗里实时点登录 / 切换扫码（需 novnc / websockify）。"],
             ["btn-hook-all", "全部挂载", "让 SnowLuma 挂载所有可用的 QQ 进程。"],
             ["btn-open-config", "配置", "修改运行方式、账号、VNC、自动化等选项；安装与下载镜像在「维护与帮助 → 下载与安装」。"],
             ["log-container", "实时日志", "插件与 SnowLuma 的运行日志，出错时先看这里。"],
@@ -1187,11 +1188,67 @@
             vnc.textContent = "VNC 未运行" + (info.display ? "（DISPLAY=" + info.display + "）" : "") +
                 "；二维码截图仍可直接使用。";
         }
+
+        // Embedded live view (noVNC served by websockify).
+        S.qqNovncUrl = "";
+        const novnc = info.novnc || {};
+        const liveBtn = $("btn-qq-live");
+        if (info.running && novnc.running) {
+            const host = window.location.hostname || "127.0.0.1";
+            const remote = !LOCAL_HOSTS.includes(host);
+            if (!(novnc.local_only && remote)) {
+                S.qqNovncUrl = "http://" + host + ":" + novnc.port +
+                    "/vnc.html?autoconnect=1&resize=scale&path=websockify";
+            }
+        }
+        if (liveBtn) {
+            liveBtn.disabled = !S.qqNovncUrl;
+            liveBtn.title = S.qqNovncUrl
+                ? "在弹窗内实时操作 QQ"
+                : (novnc.available ? "VNC 未就绪" : "未安装 novnc / websockify");
+        }
+        if (S.qqNovncUrl) {
+            vnc.textContent += (vnc.textContent ? " · " : "") + "实时画面：" + S.qqNovncUrl;
+        }
+        if (!S.qqNovncUrl) setQQLive(false);
+    }
+
+    function setQQLive(on) {
+        const modal = $("qq-login-modal");
+        const frame = $("qq-live-frame");
+        const btn = $("btn-qq-live");
+        if (!modal || !frame || !btn) return;
+        const enable = !!on && !!S.qqNovncUrl;
+        modal.classList.toggle("live", enable);
+        btn.textContent = enable ? "切回截图" : "页面内操作";
+        if (enable) {
+            if (frame.getAttribute("src") !== S.qqNovncUrl) {
+                frame.setAttribute("src", S.qqNovncUrl);
+            }
+        } else {
+            frame.removeAttribute("src");
+        }
+    }
+
+    function toggleQQLive() {
+        const modal = $("qq-login-modal");
+        if (!modal) return;
+        if (!S.qqNovncUrl) {
+            toast("实时画面不可用：请先安装 novnc / websockify 并设置 VNC 密码", "warn", 4000);
+            return;
+        }
+        setQQLive(!modal.classList.contains("live"));
     }
 
     function openQQLoginModal() {
+        setQQLive(false);
         $("qq-login-modal").classList.add("visible");
         refreshQQLogin();
+    }
+
+    function closeQQLoginModal() {
+        setQQLive(false);
+        $("qq-login-modal").classList.remove("visible");
     }
 
     async function restartQQLogin() {
@@ -1560,6 +1617,7 @@
         ["qq_path", "value"],
         ["qq_display", "value"],
         ["vnc_port", "number"],
+        ["novnc_port", "number"],
         ["astrbot_config_path", "value"],
         ["ws_host_override", "value"],
         ["sync_connection_name", "value"],
@@ -1698,7 +1756,8 @@
         $("btn-qq-login-refresh").addEventListener("click", refreshQQLogin);
         $("btn-qq-login-restart").addEventListener("click", restartQQLogin);
         $("btn-copy-qq-vnc").addEventListener("click", actionCopyQQVnc);
-        $("btn-close-qq-login").addEventListener("click", () => $("qq-login-modal").classList.remove("visible"));
+        $("btn-close-qq-login").addEventListener("click", closeQQLoginModal);
+        $("btn-qq-live").addEventListener("click", toggleQQLive);
         $("btn-replay-guide").addEventListener("click", () => {
             closeConfig();
             startOnboarding();

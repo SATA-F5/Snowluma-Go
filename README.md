@@ -75,7 +75,7 @@ SnowLuma Go 是一个把 [SnowLuma](https://github.com/SnowLuma/SnowLuma) 一键
 | 同步连接 | 把 AstrBot 的 OneBot v11 反向 WS 写入 SnowLuma 并热重载 |
 | 打开 WebUI | 弹出 WebUI 地址与密码，可复制；地址会自动适配你当前访问 AstrBot 用的主机名 |
 | 启动 QQ | 启动 QQNT；Linux 无桌面时自动准备虚拟显示与 VNC |
-| QQ 登录 | 截图当前虚拟屏幕，显示二维码 / 登录界面 |
+| QQ 登录 | 截图当前虚拟屏幕；装了 noVNC 时可点「页面内操作」实时点击登录 / 切换扫码 |
 | 全部挂载 | 注入所有发现的 QQ 主进程 |
 | 重启 | 重启 SnowLuma 服务 |
 | 刷新状态 | 刷新页面状态 |
@@ -91,7 +91,7 @@ SnowLuma Go 是一个把 [SnowLuma](https://github.com/SnowLuma/SnowLuma) 一键
 | 清理 QQ 进程 | 结束当前用户的 QQ 进程；存在其他用户的旧进程时会再询问 sudo 密码 |
 | 修复 QQ 权限 | 修正 `~/.config/QQ` 属主、设置 `kernel.yama.ptrace_scope=0`、给 Node 授予 ptrace 能力 |
 | 修复 QQ 登录界面 | 恢复被 NapCat 补丁改掉的 QQ 启动入口，并回滚 QQ 热更新版本 |
-| 安装 Linux 依赖 | 安装 xvfb / x11vnc / fluxbox / dbus-x11 / scrot 等无头运行依赖 |
+| 安装 Linux 依赖 | 安装 xvfb / x11vnc / fluxbox / dbus-x11 / scrot / novnc / websockify 等无头运行依赖 |
 | 使用引导 | 重新播放首次使用引导 |
 
 ### 管理指令
@@ -122,6 +122,7 @@ AstrBot 连接: ws://127.0.0.1:6199/ws
 
 - `fluxbox`：窗口管理器。**必须有**，否则 QQ 登录窗口不会正常映射（只有 `openbox` 时插件会打印警告）
 - `x11vnc`：把虚拟屏幕投到 VNC
+- `websockify` + `noVNC`：把 VNC 转成网页，供插件内嵌实时画面
 - 独立 D-Bus 会话：避免 Electron 在无会话总线时异常
 
 VNC 相关：
@@ -131,6 +132,17 @@ VNC 相关：
 - 填写 VNC 密码后允许局域网连接；公网暴露有风险，建议只在内网使用
 
 > 直接看弹窗里的二维码通常就够了，VNC 只是备用手段。
+
+### 在插件页面里直接操作 QQ
+
+「QQ 登录」弹窗默认显示静态截图。如果服务器装了 `novnc` / `websockify`，会多出一个 **页面内操作** 按钮：
+
+- 点击后弹窗内切换为实时画面，可以直接点「登录」、切换扫码、操作 QQ
+- 再点 **切回截图** 恢复静态二维码
+- 端口由配置里的「noVNC 网页端口」控制，默认 `6081`
+- 「安装 Linux 依赖」会自动安装 `novnc` 和 `websockify`
+
+如果 VNC 没有设置密码，x11vnc / noVNC 都只监听 `127.0.0.1`，远程访问会禁用「页面内操作」；设置 VNC 密码后即可在局域网使用。
 
 ## 常见问题
 
@@ -237,7 +249,7 @@ SnowLuma 通过 ptrace 注入 QQ，被 Yama 或权限策略拦住了。
 - 使用 full 发行包无需额外运行时；使用 lite 发行包需 Node.js `^24.22.1 || >=26.12.1`
 - 可访问 GitHub Releases（或配置下载镜像）
 
-无桌面 Linux 还需要 `xvfb`、`x11vnc`、`fluxbox`、`dbus-x11`、`scrot`、`x11-utils`，可以直接用 **安装 Linux 依赖** 一键安装。
+无桌面 Linux 还需要 `xvfb`、`x11vnc`、`fluxbox`、`dbus-x11`、`scrot`、`x11-utils`、`novnc`、`websockify`，可以直接用 **安装 Linux 依赖** 一键安装。
 
 注意：
 
