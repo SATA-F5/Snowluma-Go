@@ -1209,6 +1209,8 @@
 
     let qqLiveTimer = null;
     let qqLiveBusy = false;
+    let qqLiveActive = false;
+    const QQ_LIVE_INTERVAL = 500;
 
     async function refreshQQLiveFrame() {
         if (qqLiveBusy || !S.qqLiveAvailable) return;
@@ -1223,13 +1225,30 @@
                     if (data.height) img.dataset.height = String(data.height);
                 }
             }
-        } catch (error) { /* keep polling */ }
-        qqLiveBusy = false;
+        } catch (error) { /* keep polling */ } finally {
+            qqLiveBusy = false;
+        }
+    }
+
+    async function qqLiveLoop() {
+        if (!qqLiveActive) return;
+        await refreshQQLiveFrame();
+        if (!qqLiveActive) return;
+        // Self-scheduling instead of setInterval: a slow capture never queues
+        // overlapping requests, and the gap starts after the previous frame.
+        qqLiveTimer = setTimeout(qqLiveLoop, QQ_LIVE_INTERVAL);
+    }
+
+    function startQQLivePolling() {
+        if (qqLiveActive) return;
+        qqLiveActive = true;
+        qqLiveLoop();
     }
 
     function stopQQLivePolling() {
+        qqLiveActive = false;
         if (qqLiveTimer) {
-            clearInterval(qqLiveTimer);
+            clearTimeout(qqLiveTimer);
             qqLiveTimer = null;
         }
     }
@@ -1242,9 +1261,7 @@
         modal.classList.toggle("live", enable);
         btn.textContent = enable ? "切回截图" : "页面内操作";
         if (enable) {
-            refreshQQLiveFrame();
-            stopQQLivePolling();
-            qqLiveTimer = setInterval(refreshQQLiveFrame, 900);
+            startQQLivePolling();
         } else {
             stopQQLivePolling();
             const img = $("qq-live-image");

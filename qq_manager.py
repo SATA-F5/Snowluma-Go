@@ -374,6 +374,7 @@ class QQManager:
         self._wm_name = ""
         self._qq_proc: Optional[subprocess.Popen] = None
         self._qq_log_offset = 0
+        self._screen_lock = asyncio.Lock()
 
     # ---------------- detection ----------------
 
@@ -1089,7 +1090,7 @@ class QQManager:
         if convert:
             try:
                 result = subprocess.run(
-                    [convert, str(png), "-quality", "72", str(path)],
+                    [convert, str(png), "-quality", "65", str(path)],
                     capture_output=True,
                     timeout=12,
                 )
@@ -1116,7 +1117,10 @@ class QQManager:
         if not display:
             return {"ok": False, "message": "没有可用的虚拟显示"}
         path = self.manager.persistent_dir / "qq-live.jpg"
-        ok = await asyncio.to_thread(self._capture_live, display, path)
+        # Serialise grabs: the panel polls every 0.5s and multiple tabs may be
+        # open, so never run two scrot/convert pairs at once.
+        async with self._screen_lock:
+            ok = await asyncio.to_thread(self._capture_live, display, path)
         if not ok:
             return {"ok": False, "message": "截图失败，请查看 Xvfb 日志"}
         width, height = await asyncio.to_thread(self._display_geometry, display)
