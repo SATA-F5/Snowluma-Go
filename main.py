@@ -164,6 +164,7 @@ class SnowLumaGoPlugin(Star):
             ("download/options", self.api_save_download_options, ["POST"], "保存下载设置"),
             ("guide/asset", self.api_guide_asset, ["GET"], "读取引导图片"),
             ("sudo/key", self.api_sudo_key, ["GET"], "获取 sudo 加密公钥"),
+            ("ui/theme", self.api_save_theme, ["POST"], "保存界面主题"),
             ("deps/status", self.api_deps_status, ["GET"], "检查 Linux 依赖"),
             ("update/check", self.api_update_check, ["GET"], "检查 SnowLuma 更新"),
         ]
@@ -238,6 +239,21 @@ class SnowLumaGoPlugin(Star):
         if not IS_LINUX:
             return json_response({"ok": True, "missing": [], "linux": False})
         return json_response({"ok": True, "missing": missing_linux_deps(), "linux": True})
+
+    async def api_save_theme(self):
+        try:
+            payload = await request.json(default={})
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        theme = str(payload.get("theme") or "dark").strip().lower()
+        if theme not in ("dark", "light"):
+            theme = "dark"
+        self.config["ui_theme"] = theme
+        self._overrides.add("ui_theme")
+        self._save_config(self.config)
+        return json_response({"ok": True, "theme": theme})
 
     def _sudo_from_payload(self, payload: Any) -> tuple:
         """Decrypt ``sudo_password_enc`` from a request body.

@@ -75,6 +75,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "sync_connection_name": DEFAULT_CONNECTION_NAME,
     "onboarding_done": False,
     "onboarding_version": 0,
+    "ui_theme": "dark",
 }
 
 # Mirror prefixes tried in order for GitHub release downloads.

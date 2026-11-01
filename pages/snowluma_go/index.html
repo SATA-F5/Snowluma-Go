@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="color-scheme" content="dark">
+    <meta name="color-scheme" content="dark light">
     <title>SnowLuma Go 管理器</title>
     <link rel="stylesheet" href="style.css?v=1.0.4">
     <link rel="stylesheet" href="extra.css?v=1.0.4">
@@ -243,6 +243,17 @@
                         留空表示不修改。接管已有 SnowLuma 时，填写它当前的 WebUI 密码；
                         可在 SnowLuma 启动日志中搜索 <code>initial credentials</code> 找到初始密码。
                     </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <div class="form-section-title">界面</div>
+                <label class="switch-line">
+                    <span>浅色模式</span>
+                    <input type="checkbox" id="cfg-light-mode">
+                </label>
+                <div class="form-hint">
+                    仅影响本插件页面；切换后立即生效并保存。
                 </div>
             </div>
 

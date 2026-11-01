@@ -32,7 +32,38 @@
         context: {},
         qqVncAddress: "",
         qqLiveAvailable: false,
+        theme: "dark",
+        themeTouched: false,
     };
+
+    // ------------------------------------------------------------------
+    // Theme (light / dark): stored in plugin config, cached locally for
+    // an instant first paint inside the sandboxed view.
+    // ------------------------------------------------------------------
+
+    const THEME_KEY = "snowluma_go_theme";
+
+    function storedTheme() {
+        try {
+            const value = localStorage.getItem(THEME_KEY);
+            if (value === "light" || value === "dark") return value;
+        } catch (error) { /* sandboxed iframe */ }
+        return "";
+    }
+
+    function applyTheme(mode, persist) {
+        const theme = mode === "light" ? "light" : "dark";
+        if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
+        else document.documentElement.removeAttribute("data-theme");
+        S.theme = theme;
+        const toggle = $("cfg-light-mode");
+        if (toggle) toggle.checked = theme === "light";
+        if (persist) {
+            try { localStorage.setItem(THEME_KEY, theme); } catch (error) { /* ignore */ }
+        }
+    }
+
+    applyTheme(storedTheme() || "dark");
 
     // ------------------------------------------------------------------
     // Bridge: use AstrBot's SDK when injected, otherwise speak the same
@@ -361,6 +392,10 @@
 
     function render(status) {
         maybeReloadForVersion(status);
+        const configuredTheme = status && status.config && status.config.ui_theme;
+        if (!S.themeTouched && (configuredTheme === "light" || configuredTheme === "dark")) {
+            applyTheme(configuredTheme);
+        }
         renderHeader(status);
         renderStatusGrid(status);
         renderAccounts(status);
@@ -1773,6 +1808,7 @@
             $("cfg-webui_password").value = "";
             $("cfg-webui_password").type = "password";
             $("cfg-vnc_password").value = "";
+            applyTheme(config.ui_theme || S.theme || "dark");
             $("config-modal").classList.add("visible");
         } catch (error) {
             toast("读取配置失败：" + error.message, "err", 5000);
@@ -1917,6 +1953,12 @@
         });
         $("btn-config-cancel").addEventListener("click", closeConfig);
         $("btn-config-save").addEventListener("click", saveConfig);
+        $("cfg-light-mode").addEventListener("change", (event) => {
+            const theme = event.target.checked ? "light" : "dark";
+            S.themeTouched = true;
+            applyTheme(theme, true);
+            run("ui-theme", () => apiPost("ui/theme", { theme: theme }));
+        });
         $("btn-reveal-password").addEventListener("click", revealPassword);
         $("btn-copy-password-modal").addEventListener("click", actionCopyPassword);
         $("btn-open-webui").addEventListener("click", openWebUIModal);
@@ -2001,7 +2043,6 @@
     function applyContext(context) {
         S.context = context || {};
         if (S.context.pageTitle) document.title = S.context.pageTitle + " · SnowLuma Go";
-        document.documentElement.setAttribute("data-theme", "dark");
     }
 
     async function init() {
