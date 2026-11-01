@@ -247,9 +247,9 @@ class SnowLumaGoPlugin(Star):
             payload = {}
         if not isinstance(payload, dict):
             payload = {}
-        theme = str(payload.get("theme") or "light").strip().lower()
-        if theme not in ("dark", "light"):
-            theme = "light"
+        theme = str(payload.get("theme") or "auto").strip().lower()
+        if theme not in ("auto", "light", "dark"):
+            theme = "auto"
         self.config["ui_theme"] = theme
         self._overrides.add("ui_theme")
         self._save_config(self.config)

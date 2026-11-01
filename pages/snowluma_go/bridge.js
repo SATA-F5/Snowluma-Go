@@ -32,38 +32,52 @@
         context: {},
         qqVncAddress: "",
         qqLiveAvailable: false,
-        theme: "light",
+        theme: "dark",
+        themeMode: "auto",
         themeTouched: false,
     };
 
     // ------------------------------------------------------------------
-    // Theme (light / dark): stored in plugin config, cached locally for
-    // an instant first paint inside the sandboxed view.
+    // Theme: AstrBot injects data-theme and syncs it through the bridge.
+    // Follow it by default; the config switch pins an explicit theme.
     // ------------------------------------------------------------------
 
-    const THEME_KEY = "snowluma_go_theme";
+    const THEME_KEY = "snowluma_go_theme_v2";
+    const THEME_MODES = ["auto", "light", "dark"];
 
     function storedTheme() {
         try {
             const value = localStorage.getItem(THEME_KEY);
-            if (value === "light" || value === "dark") return value;
+            if (THEME_MODES.includes(value)) return value;
         } catch (error) { /* sandboxed iframe */ }
         return "";
     }
 
+    function astrbotTheme() {
+        const context = (S.bridge && typeof S.bridge.getContext === "function"
+            ? S.bridge.getContext()
+            : null) || S.context || {};
+        if (typeof context.isDark === "boolean") return context.isDark ? "dark" : "light";
+        const attr = document.documentElement.getAttribute("data-theme");
+        return attr === "light" ? "light" : "dark";
+    }
+
     function applyTheme(mode, persist) {
-        const theme = mode === "light" ? "light" : "dark";
-        if (theme === "light") document.documentElement.setAttribute("data-theme", "light");
-        else document.documentElement.removeAttribute("data-theme");
-        S.theme = theme;
+        const wanted = THEME_MODES.includes(mode) ? mode : "auto";
+        const effective = wanted === "auto" ? astrbotTheme() : wanted;
+        S.themeMode = wanted;
+        S.theme = effective;
+        document.documentElement.setAttribute("data-theme", effective);
         const toggle = $("cfg-light-mode");
-        if (toggle) toggle.checked = theme === "light";
+        if (toggle) toggle.checked = effective === "light";
+        const follow = $("link-follow-theme");
+        if (follow) follow.style.display = wanted === "auto" ? "none" : "";
         if (persist) {
-            try { localStorage.setItem(THEME_KEY, theme); } catch (error) { /* ignore */ }
+            try { localStorage.setItem(THEME_KEY, wanted); } catch (error) { /* ignore */ }
         }
     }
 
-    applyTheme(storedTheme() || "light");
+    applyTheme(storedTheme() || "auto");
 
     // ------------------------------------------------------------------
     // Bridge: use AstrBot's SDK when injected, otherwise speak the same
@@ -392,9 +406,9 @@
 
     function render(status) {
         maybeReloadForVersion(status);
-        const configuredTheme = status && status.config && status.config.ui_theme;
-        if (!S.themeTouched && (configuredTheme === "light" || configuredTheme === "dark")) {
-            applyTheme(configuredTheme);
+        const configuredMode = status && status.config && status.config.ui_theme;
+        if (!S.themeTouched && THEME_MODES.includes(configuredMode)) {
+            applyTheme(configuredMode);
         }
         renderHeader(status);
         renderStatusGrid(status);
@@ -1808,7 +1822,7 @@
             $("cfg-webui_password").value = "";
             $("cfg-webui_password").type = "password";
             $("cfg-vnc_password").value = "";
-            applyTheme(config.ui_theme || S.theme || "light");
+            applyTheme(config.ui_theme || S.themeMode || "auto");
             $("config-modal").classList.add("visible");
         } catch (error) {
             toast("读取配置失败：" + error.message, "err", 5000);
@@ -1959,6 +1973,12 @@
             applyTheme(theme, true);
             run("ui-theme", () => apiPost("ui/theme", { theme: theme }));
         });
+        $("link-follow-theme").addEventListener("click", (event) => {
+            event.preventDefault();
+            S.themeTouched = false;
+            applyTheme("auto", true);
+            run("ui-theme", () => apiPost("ui/theme", { theme: "auto" }));
+        });
         $("btn-reveal-password").addEventListener("click", revealPassword);
         $("btn-copy-password-modal").addEventListener("click", actionCopyPassword);
         $("btn-open-webui").addEventListener("click", openWebUIModal);
@@ -2043,6 +2063,7 @@
     function applyContext(context) {
         S.context = context || {};
         if (S.context.pageTitle) document.title = S.context.pageTitle + " · SnowLuma Go";
+        if (!S.themeTouched && S.themeMode === "auto") applyTheme("auto");
     }
 
     async function init() {
