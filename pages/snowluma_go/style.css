@@ -135,14 +135,15 @@
         }
         .big-btn {
             background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
+            border: none;
+            box-shadow: inset 0 0 0 1px var(--glass-border);
             color: var(--text);
             padding: 20px 14px;
             border-radius: 16px;
             cursor: pointer;
             font-size: 14px;
             font-weight: 600;
-            transition: all 0.22s ease;
+            transition: background-color 0.22s ease, box-shadow 0.22s ease, color 0.22s ease, transform 0.22s ease;
             text-align: center;
             white-space: nowrap;
             overflow: hidden;
@@ -155,9 +156,9 @@
         }
         .big-btn:hover:not(:disabled) {
             background: var(--glass-bg-strong);
-            border-color: rgba(0, 210, 255, 0.45);
             transform: translateY(-2px);
-            box-shadow: 0 6px 18px rgba(0, 174, 236, 0.22);
+            box-shadow: inset 0 0 0 1px rgba(0, 210, 255, 0.45),
+                        0 6px 18px rgba(0, 174, 236, 0.22);
         }
         .big-btn:active:not(:disabled) { transform: scale(0.985); }
         .big-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -1012,57 +1013,61 @@
 
         html[data-theme="light"] .big-btn {
             background: #ffffff;
-            border: 1px solid #dcdfe6;
             color: #606266;
-            box-shadow: none;
+            box-shadow: inset 0 0 0 1px #dcdfe6;
         }
         html[data-theme="light"] .big-btn:hover:not(:disabled) {
             background: #ecf5ff;
-            border-color: #c6e2ff;
             color: #409eff;
             transform: none;
-            box-shadow: none;
+            box-shadow: inset 0 0 0 1px #c6e2ff;
         }
         html[data-theme="light"] .big-btn.power-on {
             background: #67c23a;
             border-color: #67c23a;
             color: #ffffff;
+            box-shadow: none;
         }
         html[data-theme="light"] .big-btn.power-on:hover:not(:disabled) {
             background: #85ce61;
             border-color: #85ce61;
             color: #ffffff;
+            box-shadow: none;
         }
         html[data-theme="light"] .big-btn.power-off {
             background: #f56c6c;
             border-color: #f56c6c;
             color: #ffffff;
+            box-shadow: none;
         }
         html[data-theme="light"] .big-btn.power-off:hover:not(:disabled) {
             background: #f78989;
             border-color: #f78989;
             color: #ffffff;
+            box-shadow: none;
         }
         html[data-theme="light"] .big-btn.sync,
         html[data-theme="light"] .big-btn.webui {
             background: #ffffff;
-            border: 1px solid #dcdfe6;
             color: #606266;
+            box-shadow: inset 0 0 0 1px #dcdfe6;
         }
         html[data-theme="light"] .big-btn.sync:hover:not(:disabled),
         html[data-theme="light"] .big-btn.webui:hover:not(:disabled) {
             background: #ecf5ff;
-            border-color: #c6e2ff;
             color: #409eff;
+            box-shadow: inset 0 0 0 1px #c6e2ff;
         }
         html[data-theme="light"] .big-btn.power-downloading {
             background: #67c23a;
             border-color: #67c23a;
             color: #ffffff;
+            box-shadow: none;
         }
         html[data-theme="light"] .big-btn.power-downloading:hover:not(:disabled) {
             background: #85ce61;
             border-color: #85ce61;
+            box-shadow: none;
         }
         html[data-theme="light"] .big-btn.power-on,
         html[data-theme="light"] .big-btn.power-off,
@@ -1247,7 +1252,6 @@
         }
         html[data-theme="dark"] .big-btn {
             background: rgba(255, 255, 255, 0.06);
-            border-color: rgba(255, 255, 255, 0.12);
             color: #e6e6f0;
         }
         html[data-theme="dark"] .big-btn.sync {
@@ -1268,8 +1272,9 @@
         }
         html[data-theme="dark"] .big-btn.webui {
             background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.12);
+            border: none;
             color: #e6e6f0;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
         }
         html[data-theme="dark"] .status-item {
             background: rgba(255, 255, 255, 0.06);
