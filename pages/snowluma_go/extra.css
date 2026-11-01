@@ -384,5 +384,5 @@ html[data-theme="light"] .install-grid select {
     background: #ffffff;
     border-color: rgba(13, 25, 48, 0.18);
 }
-html[data-theme="light"] .pwd-text { color: #1b2434; }
-html[data-theme="light"] .pwd-text.revealed { color: #9a6a00; }
+html[data-theme="light"] .pwd-text { color: #000000; }
+html[data-theme="light"] .pwd-text.revealed { color: #000000; font-weight: 600; }

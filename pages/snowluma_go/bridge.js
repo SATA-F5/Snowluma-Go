@@ -32,7 +32,7 @@
         context: {},
         qqVncAddress: "",
         qqLiveAvailable: false,
-        theme: "dark",
+        theme: "light",
         themeTouched: false,
     };
 
@@ -63,7 +63,7 @@
         }
     }
 
-    applyTheme(storedTheme() || "dark");
+    applyTheme(storedTheme() || "light");
 
     // ------------------------------------------------------------------
     // Bridge: use AstrBot's SDK when injected, otherwise speak the same
@@ -1808,7 +1808,7 @@
             $("cfg-webui_password").value = "";
             $("cfg-webui_password").type = "password";
             $("cfg-vnc_password").value = "";
-            applyTheme(config.ui_theme || S.theme || "dark");
+            applyTheme(config.ui_theme || S.theme || "light");
             $("config-modal").classList.add("visible");
         } catch (error) {
             toast("读取配置失败：" + error.message, "err", 5000);
