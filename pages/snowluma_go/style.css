@@ -978,7 +978,7 @@
             background: #ffffff;
             border-color: #dcdfe6;
             color: #606266;
-            border-radius: 6px;
+            border-radius: 20px;
         }
         html[data-theme="light"] .btn:hover {
             background: #ecf5ff;
@@ -1011,6 +1011,7 @@
             border-color: #e4e7ed;
             color: #c0c4cc;
         }
+        html[data-theme="light"] .btn-sm { border-radius: 16px; }
 
         html[data-theme="light"] .big-btn {
             background: #ffffff;
@@ -1019,7 +1020,7 @@
             font-weight: 500;
             font-size: 13px;
             padding: 16px 14px;
-            border-radius: 8px;
+            border-radius: 16px;
             box-shadow: none;
         }
         html[data-theme="light"] .big-btn:hover:not(:disabled) {
@@ -1073,9 +1074,11 @@
         html[data-theme="light"] .confirm-box {
             background: #ffffff;
             border-color: #ebeef5;
-            border-radius: 8px;
+            border-radius: 12px;
             box-shadow: none;
         }
+        html[data-theme="light"] .modal-content { border-radius: 18px; }
+        html[data-theme="light"] .confirm-box { border-radius: 14px; }
         html[data-theme="light"] .download-panel { border-left: 3px solid #409eff; }
         html[data-theme="light"] .dl-progress-bar { background: #ebeef5; }
         html[data-theme="light"] .dl-info { color: #909399; }
@@ -1095,7 +1098,7 @@
             background: #f4f8ff;
             border-color: #d9ecff;
             border-left: 3px solid #409eff;
-            border-radius: 8px;
+            border-radius: 12px;
         }
         html[data-theme="light"] .guide strong { color: #337ecc; }
         html[data-theme="light"] .guide.error { border-left-color: #f56c6c; background: #fef0f0; border-color: #fde2e2; }
@@ -1104,7 +1107,7 @@
         html[data-theme="light"] .log-container {
             background: #ffffff;
             border-color: #ebeef5;
-            border-radius: 8px;
+            border-radius: 12px;
             color: #606266;
         }
         html[data-theme="light"] .log-container .log-ts { color: #a8abb2; }
@@ -1126,7 +1129,7 @@
             background: #ffffff;
             border-color: #dcdfe6;
             color: #303133;
-            border-radius: 6px;
+            border-radius: 10px;
         }
         html[data-theme="light"] .form-group input:focus,
         html[data-theme="light"] .form-group select:focus {
@@ -1147,7 +1150,7 @@
         html[data-theme="light"] .ver-dropdown-btn {
             background: #ffffff;
             border-color: #dcdfe6;
-            border-radius: 6px;
+            border-radius: 10px;
         }
         html[data-theme="light"] .ver-dropdown-list {
             background: #ffffff;
