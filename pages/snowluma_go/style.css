@@ -962,15 +962,12 @@
             background: transparent;
             border-color: transparent;
             box-shadow: none;
-            padding: 4px 2px;
         }
 
         html[data-theme="light"] .header h2 {
             background: none;
             -webkit-text-fill-color: #303133;
             color: #303133;
-            font-size: 18px;
-            font-weight: 600;
         }
         html[data-theme="light"] .header .subtitle { color: #909399; }
 
@@ -1017,10 +1014,6 @@
             background: #ffffff;
             border: 1px solid #dcdfe6;
             color: #606266;
-            font-weight: 500;
-            font-size: 13px;
-            padding: 16px 14px;
-            border-radius: 16px;
             box-shadow: none;
         }
         html[data-theme="light"] .big-btn:hover:not(:disabled) {
@@ -1067,6 +1060,11 @@
             border-color: #409eff;
             color: #ffffff;
         }
+        html[data-theme="light"] .big-btn.power-on,
+        html[data-theme="light"] .big-btn.power-off,
+        html[data-theme="light"] .big-btn.power-downloading {
+            border: none;
+        }
 
         html[data-theme="light"] .download-panel,
         html[data-theme="light"] .status-item,
@@ -1088,7 +1086,6 @@
         html[data-theme="light"] .status-item .label { color: #909399; }
         html[data-theme="light"] .status-item .value {
             color: #303133;
-            font-weight: 500;
         }
         html[data-theme="light"] .value.ok { color: #529b2e; }
         html[data-theme="light"] .value.warn { color: #c2410c; }
