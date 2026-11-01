@@ -369,20 +369,56 @@ a { color: var(--primary-light); }
     .install-grid { grid-template-columns: 1fr; }
 }
 
-/* ===================== light theme ===================== */
+/* ===================== light theme (AstrBot / Element style) ===================== */
+html[data-theme="light"] .proc-row {
+    background: #fafbfc;
+    border-color: #ebeef5;
+}
+html[data-theme="light"] .empty-box {
+    border-color: #e4e7ed;
+    color: #909399;
+}
+html[data-theme="light"] .tag.ok {
+    background: #f0f9eb;
+    border-color: #e1f3d8;
+    color: #529b2e;
+}
+html[data-theme="light"] .tag.warn {
+    background: #f5f7fa;
+    border-color: #e4e7ed;
+    color: #c2410c;
+}
+html[data-theme="light"] .tag.err {
+    background: #fef0f0;
+    border-color: #fde2e2;
+    color: #f56c6c;
+}
 html[data-theme="light"] .mirror-menu {
     background: #ffffff;
-    box-shadow: 0 14px 34px rgba(20, 40, 80, 0.16);
+    border-color: #e4e7ed;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
-html[data-theme="light"] .mirror-option:hover { background: rgba(10, 132, 193, 0.10); }
-html[data-theme="light"] .mirror-option.selected { background: rgba(10, 132, 193, 0.14); }
-html[data-theme="light"] .qq-qr-wrap { background: #f4f7fb; }
-html[data-theme="light"] .qq-live-wrap img { background: #f4f7fb; }
+html[data-theme="light"] .mirror-option:hover { background: #f5f7fa; }
+html[data-theme="light"] .mirror-option.selected { background: #ecf5ff; color: #409eff; }
+html[data-theme="light"] .mirror-tag { border-color: #e4e7ed; color: #909399; }
+html[data-theme="light"] .qq-qr-wrap {
+    background: #fafafa;
+    border-color: #ebeef5;
+}
+html[data-theme="light"] .qq-live-wrap img {
+    background: #fafafa;
+    border-color: #ebeef5;
+}
 html[data-theme="light"] .qq-live-bar input,
 html[data-theme="light"] .log-header select,
 html[data-theme="light"] .install-grid select {
     background: #ffffff;
-    border-color: rgba(13, 25, 48, 0.18);
+    border-color: #dcdfe6;
+    color: #303133;
 }
-html[data-theme="light"] .pwd-text { color: #000000; }
-html[data-theme="light"] .pwd-text.revealed { color: #000000; font-weight: 600; }
+html[data-theme="light"] .pwd-text { color: #303133; }
+html[data-theme="light"] .pwd-text.revealed { color: #303133; font-weight: 600; }
+html[data-theme="light"] .mirror-toggle:hover {
+    background: #f5f7fa;
+    color: #409eff;
+}
