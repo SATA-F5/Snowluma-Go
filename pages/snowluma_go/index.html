@@ -248,12 +248,15 @@
 
             <div class="form-section">
                 <div class="form-section-title">界面</div>
-                <label class="switch-line">
+                <div class="switch-line theme-line">
                     <span>浅色模式</span>
-                    <input type="checkbox" id="cfg-light-mode">
-                </label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="cfg-light-mode" aria-label="浅色模式">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
                 <div class="form-hint">
-                    仅影响本插件页面；切换后立即生效并保存。
+                    向左为深色，向右为浅色；切换后立即生效并保存。
                 </div>
             </div>
 

@@ -262,6 +262,55 @@ a { color: var(--primary-light); }
     flex-shrink: 0;
 }
 
+/* Left/right sliding switch for the theme */
+.theme-line { padding: 6px 0; }
+.toggle-switch {
+    position: relative;
+    display: inline-flex;
+    width: 46px;
+    height: 24px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.theme-line .toggle-switch input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    pointer-events: none;
+}
+.toggle-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #4a4f63;
+    transition: background 0.22s ease;
+}
+.toggle-slider::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--primary-light);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(22px);
+}
+.toggle-switch input:focus-visible + .toggle-slider {
+    box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.25);
+}
+html[data-theme="light"] .toggle-slider { background: #c0c4cc; }
+html[data-theme="light"] .toggle-switch input:checked + .toggle-slider { background: #409eff; }
+
 .btn-sm {
     padding: 4px 11px;
     font-size: 10.5px;
